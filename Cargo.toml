@@ -1,9 +1,16 @@
 [workspace]
-members = ["hozz", "crates/shared", "crates/config", "crates/machine", "crates/telemetry", "crates/prefs"]
+members = [
+    "hozz",
+    "crates/shared",
+    "crates/config",
+    "crates/machine",
+    "crates/telemetry",
+    "crates/prefs",
+]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 authors = ["MR"]
 publish = false
@@ -30,7 +37,7 @@ version = "1.52.3"
 features = ["full", "signal"]
 
 [workspace.dependencies.uuid]
-version = "1.23.3"
+version = "1.23.4"
 features = ["v4"]
 
 
