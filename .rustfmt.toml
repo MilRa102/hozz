@@ -1,0 +1,29 @@
+# === Common === #
+edition = "2024"
+remove_nested_parens = true
+max_width = 90
+tab_spaces = 4
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# === Imports === #
+# Sort
+reorder_imports = true
+reorder_modules = true
+# Nightly
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+
+# === Callable === #
+# Common
+disable_all_formatting = false
+array_width = 50
+chain_width = 50
+# Fn
+fn_call_width = 50
+attr_fn_like_width = 70
+# Match
+match_arm_leading_pipes = "Preserve"
+match_block_trailing_comma = true
+# Derive
+merge_derives = true

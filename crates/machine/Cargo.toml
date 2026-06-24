@@ -1,0 +1,22 @@
+[package]
+name = "machine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+config = { path = "../config" }
+
+anyhow = { workspace = true }
+interprocess = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+auto-launch = "0.6.0"
+nvml-wrapper = "0.12"
+sysinfo = "0.39"
+sysproxy = "0.3"
+
+[lints]
+workspace = true

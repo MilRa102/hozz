@@ -1,0 +1,49 @@
+[package]
+name = "hozz"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[profile.release]
+debug = true
+
+[dependencies]
+machine = { path = "../crates/machine" }
+shared = { path = "../crates/shared" }
+prefs = { path = "../crates/prefs" }
+telemetry = { path = "../crates/telemetry" }
+
+anyhow = { workspace = true }
+interprocess = { workspace = true }
+tokio = { workspace = true, features = ["full", "signal"] }
+serde_json = { workspace = true }
+
+arboard = "3.4"
+base64 = "0.22"
+image = "0.25"
+futures = "0.3"
+
+dioxus = { version = "0.7.9", features = ["router"] }
+dioxus-free-icons = { version = "0.10", features = [
+    "ionicons",
+    "lucide",
+    "material-design-icons-action",
+    "material-design-icons-alert",
+    "material-design-icons-content",
+    "material-design-icons-hardware",
+    "material-design-icons-navigation",
+    "material-design-icons-notification",
+] }
+
+[build-dependencies]
+winres = "0.1"
+
+[features]
+default = ["desktop"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+
+[lints]
+workspace = true

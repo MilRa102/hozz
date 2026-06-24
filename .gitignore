@@ -1,0 +1,13 @@
+target/
+data/
+logs/
+
+.idea/
+.vscode/
+
+*.log
+*.rsbackup
+
+.env
+config.toml
+config.yaml

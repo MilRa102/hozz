@@ -1,0 +1,7 @@
+[application]
+name = "hozz"
+
+[bundle]
+identifier = "com.Nodes"
+publisher = "hozz"
+icon = ["assets/zero.png", "assets/zero.ico"]
