@@ -1,17 +1,24 @@
+set quiet := true
+
+c_step  := '\033[1;34m'
+c_done  := '\033[1;32m'
+c_reset := '\033[0m'
+
 # === Developer environments === #
 
 # Run all checks (linter + formatting)
-lint: fmt clippy check-unused-deps
+lint: fmt clippy unused
+    @printf "{{c_done}}=> [4/4] ✔ All checks passed successfully!{{c_reset}}\n"
 
-# Correction of code style according to
+# Correction of code style
 fmt:
-    @echo "🍰 Adding styles.."
-    @cargo +nightly fmt --all
+    @printf "{{c_step}}=> [1/4] 🍰 Formatting code..{{c_reset}}\n"
+    cargo +nightly fmt --all
 
 # Check and automatically apply simple clippy tips
 clippy:
-    @echo "✨ Correcting inconsistencies and organizing code.."
-    @cargo clippy \
+    @printf "{{c_step}}=> [2/4] ✨ Running clippy..{{c_reset}}\n"
+    cargo clippy \
         --fix \
         --workspace \
         --all-targets \
@@ -22,10 +29,22 @@ clippy:
         -D warnings
 
 # Checking for unused dependencies in Cargo.toml
-check-unused-deps:
-    @echo "🔍 Checking for unused dependencies in Cargo.toml..."
-    @cargo machete
+unused:
+    @printf "{{c_step}}=> [3/4] 🔍 Checking unused deps..{{c_reset}}\n"
+    cargo machete
 
-# Checking for "forgotten" and unused code
-check-dead-code:
-    @cargo check --profile test -- -D dead-code -D unused-imports
+# Checking dependencies for security vulnerabilities
+audit:
+    @printf "{{c_step}}=> 🛡️ Running security audit..{{c_reset}}\n"
+    cargo audit
+
+# Check for outdated dependencies
+outdated:
+    @printf "{{c_step}}=> 📦 Checking for outdated crates..{{c_reset}}\n"
+    cargo outdated --workspace
+
+# Clean build artifacts and temporary files
+clean:
+    @printf "{{c_step}}=> 🧹 Cleaning project..{{c_reset}}\n"
+    cargo clean
+    @printf "{{c_done}}✔ Workspace is clean!{{c_reset}}\n"

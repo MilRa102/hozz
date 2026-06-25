@@ -7,12 +7,15 @@ use config::CONF;
 use prefs::SettingsRegistry;
 use tokio::sync::OnceCell;
 
-use crate::apps::{state::StateManager, tasks::BackgroundTasks};
 use crate::{
-    apps::prefs::{
-        AllowLanCapability, AutostartCapability, ContainerCapability, FakeIpCapability,
-        FindProcessCapability, GatewayCapability, PolicyCapability, ResourceCapability,
-        SystemProxyCapability, VaultCapability,
+    apps::{
+        prefs::{
+            AllowLanCapability, AutostartCapability, ContainerCapability,
+            FakeIpCapability, FindProcessCapability, GatewayCapability, PolicyCapability,
+            ResourceCapability, SystemProxyCapability, VaultCapability,
+        },
+        state::StateManager,
+        tasks::BackgroundTasks,
     },
     core::{dispatch::Dispatch, manager::Manager},
     db::{
