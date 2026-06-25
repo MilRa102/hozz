@@ -7,10 +7,9 @@ use dioxus_free_icons::icons::{
     md_hardware_icons::{MdMemory, MdSecurity},
     md_navigation_icons::MdMenu,
 };
-use shared::{
-    app::orchestrator::Orchestrator,
-    apps::prefs::{ContainerCapability, ResourceCapability, VaultCapability},
-    infra::PrefsManager,
+use shared::apps::{
+    Orchestrator, PrefsManager,
+    prefs::{ContainerCapability, ResourceCapability, VaultCapability},
 };
 
 use crate::{route::Route, utils::Icon};

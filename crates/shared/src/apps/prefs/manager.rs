@@ -4,7 +4,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use prefs::PreferenceKey;
 
-use crate::{app::orchestrator::Orchestrator, db::SledManager};
+use crate::{apps::Orchestrator, db::SledManager};
 
 #[async_trait]
 pub trait PrefsManager {

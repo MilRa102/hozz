@@ -4,7 +4,7 @@ use dioxus::{desktop::use_window, prelude::*};
 use dioxus_free_icons::icons::{
     md_content_icons::MdRemove, md_navigation_icons::MdClose,
 };
-use shared::app::orchestrator::Orchestrator;
+use shared::apps::Orchestrator;
 
 use crate::utils::Icon;
 

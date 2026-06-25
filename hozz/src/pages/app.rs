@@ -2,13 +2,8 @@ use std::{io::Read, sync::Arc, thread, time::Duration};
 
 use dioxus::{desktop::use_window, logger::tracing, prelude::*};
 use interprocess::local_socket::traits::ListenerExt;
-use shared::{
-    app::{
-        nodes::GroupNode,
-        orchestrator::{ORCH, Orchestrator},
-        profile::Profile,
-    },
-    infra::{CoreController, LoggingLayer},
+use shared::apps::{
+    LoggingLayer, ORCH, Orchestrator, Profile, node::GroupNode, proxy::CoreController,
 };
 use tokio::time::sleep;
 

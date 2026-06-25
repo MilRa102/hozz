@@ -1,5 +1,5 @@
 use crate::{
-    app::profile::{Profile, ProfileV1},
+    apps::{Profile, proxy::profile::ProfileV1},
     db::SledManager,
 };
 

@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use shared::app::nodes::Node;
+use shared::apps::node::Node;
 
 /// Node item
 ///

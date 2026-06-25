@@ -3,10 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use dioxus::{logger::tracing, prelude::*};
 use dioxus_free_icons::icons::md_action_icons::MdAnchor;
 use prefs::Category;
-use shared::{
-    app::orchestrator::Orchestrator,
-    infra::{LoggingLayer, PrefsManager},
-};
+use shared::apps::{LoggingLayer, Orchestrator, PrefsManager};
 
 use crate::{
     components::{

@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use shared::{
-    app::orchestrator::Orchestrator,
-    apps::vault::TokenInfo,
+    apps::{
+        LoggingLayer, Orchestrator,
+        vault::{SecretManager, TokenInfo},
+    },
     db::vault::VaultConfig,
-    infra::{SecretManager, log::LoggingLayer},
 };
 
 use crate::components::panel::{VaultExplorer, VaultSignIn};

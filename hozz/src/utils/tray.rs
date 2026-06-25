@@ -10,7 +10,7 @@ use dioxus::{
     logger::tracing,
     prelude::*,
 };
-use shared::{app::orchestrator::Orchestrator, infra::CoreController};
+use shared::apps::{Orchestrator, proxy::CoreController};
 
 use crate::{pages::app::AppState, utils::to_clipboard};
 

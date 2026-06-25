@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::md_content_icons::{MdAdd, MdContentPaste};
-use shared::{
-    app::orchestrator::Orchestrator,
-    infra::{ProfileManager, log::LoggingLayer},
-};
+use shared::apps::{LoggingLayer, Orchestrator, ProfileManager};
 
 use crate::utils::Icon;
 

@@ -6,7 +6,7 @@ use dioxus_free_icons::icons::{
     md_alert_icons::{MdError, MdWarning},
     md_navigation_icons::MdClose,
 };
-use shared::app::{alert::Alert, orchestrator::Orchestrator};
+use shared::apps::{Alert, Orchestrator};
 use tokio::time::sleep;
 
 use crate::utils::Icon;

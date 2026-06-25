@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::io_icons::{IoArrowDown, IoArrowUp};
-use shared::{app::orchestrator::Orchestrator, infra::GroupManager};
+use shared::apps::{NodeManager, Orchestrator};
 
 use crate::{
     components::{

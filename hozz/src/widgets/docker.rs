@@ -7,19 +7,17 @@ use dioxus_free_icons::icons::{
     md_navigation_icons::{MdUnfoldLess, MdUnfoldMore},
 };
 use futures::StreamExt;
-use shared::{
-    HumanTime,
-    app::docker::{Container, ContainerStatus},
-    utils::format_size,
-};
+use shared::{HumanTime, apps::docker, utils::format_size};
 
 use crate::{route::Route, utils::Icon};
 
-#[allow(clippy::clone_on_copy)]
 #[component]
-pub fn ContainerWidget(container: Container, on_action: EventHandler<()>) -> Element {
+pub fn ContainerWidget(
+    container: docker::Container,
+    on_action: EventHandler<()>,
+) -> Element {
     let container_signal = use_signal(|| container.clone());
-    let is_running = container_signal.read().state == ContainerStatus::RUNNING;
+    let is_running = container_signal.read().state == docker::ContainerStatus::RUNNING;
 
     // Семантические цвета для статусов
     let (status_bg, status_dot, status_text) = if is_running {
@@ -73,20 +71,18 @@ pub fn ContainerWidget(container: Container, on_action: EventHandler<()>) -> Ele
 
                 ControlButtons {
                     container: container_signal.read().clone(),
-                    on_action: on_action.clone(),
+                    on_action: on_action,
                 }
             }
         }
     }
 }
 
-#[allow(clippy::clone_on_copy)]
-#[allow(clippy::ignored_unit_patterns)]
 #[component]
 pub fn DockerContainer(id: String) -> Element {
     let mut container_res = use_resource(move || {
         let id = id.clone();
-        async move { Container::inspect(id).await }
+        async move { docker::Container::inspect(id).await }
     });
 
     // По умолчанию панель деталей открыта на широких экранах
@@ -154,7 +150,7 @@ pub fn DockerContainer(id: String) -> Element {
                                     }
 
                                     div { class: "flex-1 overflow-y-auto p-2 divide-y divide-zinc-800/50",
-                                        InfoRow { title: "Создан".to_string(), value: container.created.clone() }
+                                        InfoRow { title: "Создан".to_string(), value: container.created }
                                         InfoRow { title: "Образ".to_string(), value: container.image.clone() }
                                         InfoRow { title: "Команда".to_string(), value: container.command.clone() }
                                         InfoRow { title: "Порты".to_string(), value: container.ports.clone() }
@@ -217,15 +213,15 @@ fn InfoRow(title: String, value: String) -> Element {
 }
 
 #[component]
-fn StatusBadge(container: Container) -> Element {
-    let is_running = container.state == ContainerStatus::RUNNING;
+fn StatusBadge(container: docker::Container) -> Element {
+    let is_running = container.state == docker::ContainerStatus::RUNNING;
     let (status_bg, status_dot, status_text) = if is_running {
         (
             "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
             "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]",
             "Работает",
         )
-    } else if container.state == ContainerStatus::EXITED {
+    } else if container.state == docker::ContainerStatus::EXITED {
         (
             "bg-red-500/10 border-red-500/20 text-red-400",
             "bg-red-500",
@@ -255,10 +251,13 @@ fn StatusBadge(container: Container) -> Element {
 #[allow(clippy::clone_on_copy)]
 #[allow(clippy::await_holding_invalid_type)]
 #[component]
-pub fn ControlButtons(container: Container, on_action: EventHandler<()>) -> Element {
+pub fn ControlButtons(
+    container: docker::Container,
+    on_action: EventHandler<()>,
+) -> Element {
     let container = use_signal(|| container.clone());
     let mut is_loading = use_signal(|| false);
-    let is_running = container.read().state == ContainerStatus::RUNNING;
+    let is_running = container.read().state == docker::ContainerStatus::RUNNING;
 
     rsx! {
         div { class: "flex items-center gap-1",
@@ -324,7 +323,7 @@ pub fn ControlButtons(container: Container, on_action: EventHandler<()>) -> Elem
 }
 
 #[component]
-pub fn LogViewer(container: Container) -> Element {
+pub fn LogViewer(container: docker::Container) -> Element {
     let mut log_lines = use_signal(Vec::<String>::new);
 
     let _log_worker = use_coroutine(move |_: UnboundedReceiver<()>| {

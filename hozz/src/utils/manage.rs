@@ -8,7 +8,8 @@ use dioxus::{
     prelude::*,
 };
 use shared::{
-    app::orchestrator::Orchestrator, infra::CoreController, utils::format_bytes,
+    apps::{Orchestrator, proxy::CoreController},
+    utils::format_bytes,
 };
 
 use crate::{

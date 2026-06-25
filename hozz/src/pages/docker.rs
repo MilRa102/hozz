@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use shared::app::docker;
+use shared::apps::docker;
 
 use crate::{components::pet::ZeroEmpty, widgets::docker::ContainerWidget};
 

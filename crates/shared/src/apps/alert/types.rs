@@ -94,7 +94,6 @@ impl Alert {
     /// ```
     /// Alert::ok("Everything is fine").id();
     /// ```
-    #[must_use]
     pub fn id(&self) -> Uuid {
         match self {
             Self::Info { id, .. }
@@ -113,7 +112,6 @@ impl Alert {
     /// ```
     /// Alert::ok("Everything is fine").message();
     /// ```
-    #[must_use]
     pub fn message(&self) -> &str {
         match self {
             Self::Info { msg, .. }

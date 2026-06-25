@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dioxus::{logger::tracing, prelude::*};
-use shared::{app::orchestrator::Orchestrator, infra::ProfileManager};
+use shared::apps::{Orchestrator, ProfileManager};
 
 use crate::{
     components::{item::ProfileItem, pet::ZeroEmpty},

@@ -35,6 +35,7 @@ pub struct Traffic {
     pub down: u64,
 }
 
+/// Proxy node transform details
 impl From<api::Proxy> for Node {
     fn from(value: api::Proxy) -> Self {
         Self {
@@ -48,6 +49,7 @@ impl From<api::Proxy> for Node {
     }
 }
 
+/// Proxy group nodes transform details
 impl From<api::Proxies> for Vec<GroupNode> {
     fn from(value: api::Proxies) -> Self {
         let mut groups = Vec::new();

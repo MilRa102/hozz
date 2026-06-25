@@ -5,10 +5,9 @@ use dioxus_free_icons::icons::{
     md_content_icons::MdContentCopy, md_navigation_icons::MdCheck,
 };
 use shared::{
-    app::orchestrator::Orchestrator,
+    apps::{LoggingLayer, Orchestrator},
     core::models::rule::{Direction, Rule},
     db::SledManager,
-    infra::LoggingLayer,
 };
 use tokio::task::spawn_blocking;
 

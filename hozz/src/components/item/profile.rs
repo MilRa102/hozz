@@ -4,7 +4,7 @@ use dioxus_free_icons::icons::{
     md_action_icons::MdDelete,
     md_notification_icons::{MdPower, MdPowerOff, MdSync},
 };
-use shared::app::profile::{Profile, Source};
+use shared::apps::{Profile, Source};
 
 use crate::utils::Icon;
 

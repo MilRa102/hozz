@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::{LdCopy, LdEye, LdEyeOff};
-use shared::{app::orchestrator::Orchestrator, infra::LoggingLayer};
+use shared::apps::{LoggingLayer, Orchestrator};
 
 use crate::utils::{Icon, to_clipboard};
 

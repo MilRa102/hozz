@@ -3,10 +3,11 @@ use std::sync::Arc;
 use dioxus::prelude::*;
 use serde_json::{Map, Value as Json};
 use shared::{
-    app::orchestrator::Orchestrator,
-    apps::vault::{SecretItem, SecretType, TokenInfo},
+    apps::{
+        Orchestrator,
+        vault::{SecretItem, SecretManager, SecretType, TokenInfo},
+    },
     db::vault::VaultConfig,
-    infra::SecretManager,
 };
 
 use super::{
