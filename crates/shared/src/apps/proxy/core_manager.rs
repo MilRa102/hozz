@@ -128,13 +128,13 @@ impl CoreController for Orchestrator {
             }
         }
 
+        // Sync preferences, profiles, and rules
         let (pref_res, prof_res, rules_res) = tokio::join!(
             self.sync_preferences(),
             self.sync_profiles(),
             self.sync_rules()
         );
 
-        // Sync preferences, profiles, and rules
         if let Err(e) = pref_res {
             tracing::error!(error = %e, "Failed to sync preferences");
         }

@@ -68,6 +68,8 @@ impl BackgroundTasks for Orchestrator {
     /// - `connections_monitor`: Tracks and manages connection rules based on activity.
     /// - `tun_monitor`: Handles TUN device lifecycle (Windows) and IP fetching (Linux).
     fn launch_background() {
+        std::thread::sleep(Duration::from_millis(300));
+
         // Regular tasks
         tokio::spawn(async move {
             if let Some(arch) = ORCH.get() {
