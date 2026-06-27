@@ -41,6 +41,8 @@ pub struct AppConfig {
     pub level: LogLevel,
     #[serde(default)]
     pub is_admin: bool,
+    #[serde(default = "default_cache_capacity")]
+    pub cache_capacity: u64,
 }
 
 impl Default for AppConfig {
@@ -49,10 +51,15 @@ impl Default for AppConfig {
             myip_url: default_myip_url(),
             level: LogLevel::default(),
             is_admin: false,
+            cache_capacity: default_cache_capacity(),
         }
     }
 }
 
 fn default_myip_url() -> String {
     "https://api64.ipify.org".to_string()
+}
+
+fn default_cache_capacity() -> u64 {
+    10 * 1024 * 1024
 }
