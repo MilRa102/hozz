@@ -1,14 +1,18 @@
-use crate::{core::models::rule::Rule, db::SledManager};
+use crate::core::models::rule::Rule;
+use db::SledManager;
 
 pub struct RuleStore;
 
-impl SledManager for RuleStore {
-    type Item = Rule;
+impl SledManager<Rule> for RuleStore {
     const TREE_NAME: &'static str = "forwards";
 }
 
 impl RuleStore {
     pub fn upsert(&self, forward: &Rule) -> anyhow::Result<()> {
         self.save(&forward.id, forward)
+    }
+
+    pub fn extract(&self) -> Vec<Rule> {
+        self.all().unwrap_or_default()
     }
 }

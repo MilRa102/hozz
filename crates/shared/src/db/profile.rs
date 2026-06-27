@@ -1,20 +1,17 @@
-use crate::{
-    apps::{Profile, proxy::profile::ProfileV1},
-    db::SledManager,
-};
+use crate::apps::{Profile, proxy::profile::ProfileV1};
+use db::{SledManager, decode};
 
 pub struct ProfileStore;
 
-impl SledManager for ProfileStore {
-    type Item = Profile;
+impl SledManager<Profile> for ProfileStore {
     const TREE_NAME: &'static str = "profiles";
 
-    fn decode(bytes: &[u8]) -> anyhow::Result<Self::Item> {
-        if let Ok(profile) = bincode::deserialize::<Profile>(bytes) {
+    fn decode(bytes: &[u8]) -> anyhow::Result<Profile> {
+        if let Ok(profile) = decode::<Profile>(bytes) {
             return Ok(profile);
         }
 
-        let old_profile = bincode::deserialize::<ProfileV1>(bytes)?;
+        let old_profile = decode::<ProfileV1>(bytes)?;
 
         Ok(Profile {
             id: old_profile.id,

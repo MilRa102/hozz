@@ -11,8 +11,8 @@ use tokio_util::{
 use crate::{
     apps::{LoggingLayer, NodeManager, ORCH, Orchestrator, node::Traffic},
     core::models::rule::{Rule, Target},
-    db::SledManager,
 };
+use db::SledManager;
 
 /// Trait defining the interface for background monitoring tasks.
 ///

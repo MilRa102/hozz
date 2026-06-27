@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use crate::{
     apps::{LoggingLayer, NodeManager, Orchestrator, Profile, proxy::Source},
     core::models::conf::Provider,
-    db::SledManager,
 };
+use db::SledManager;
 
 /// A trait defining the interface for managing proxy profiles.
 ///

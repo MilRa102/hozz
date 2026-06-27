@@ -1,6 +1,5 @@
+use db::SledManager;
 use serde::{Deserialize, Serialize};
-
-use crate::db::SledManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SecretVisit {
@@ -38,8 +37,7 @@ impl VaultConfig {
 
 pub struct VaultStore;
 
-impl SledManager for VaultStore {
-    type Item = VaultConfig;
+impl SledManager<VaultConfig> for VaultStore {
     const TREE_NAME: &'static str = "vault";
 }
 

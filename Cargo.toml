@@ -5,7 +5,7 @@ members = [
     "crates/config",
     "crates/machine",
     "crates/telemetry",
-    "crates/prefs",
+    "crates/prefs", "crates/db",
 ]
 resolver = "2"
 

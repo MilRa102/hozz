@@ -1,6 +1,5 @@
 pub struct PrefsStore;
 
-impl crate::db::SledManager for PrefsStore {
-    type Item = prefs::AppPrefs;
+impl db::SledManager<prefs::AppPrefs> for PrefsStore {
     const TREE_NAME: &'static str = "app_prefs";
 }

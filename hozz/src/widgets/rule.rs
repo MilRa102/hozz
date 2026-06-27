@@ -7,7 +7,6 @@ use dioxus_free_icons::icons::{
 use shared::{
     apps::{LoggingLayer, Orchestrator},
     core::models::rule::{Direction, Rule},
-    db::SledManager,
 };
 use tokio::task::spawn_blocking;
 
@@ -84,7 +83,7 @@ pub fn RulesTable() -> Element {
 
         async move {
             spawn_blocking(move || {
-                let rules = arch.rules.all().unwrap_or_default();
+                let rules = arch.rules.extract();
 
                 let mut filtered: Vec<_> = rules
                     .into_iter()

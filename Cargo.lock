@@ -1108,6 +1108,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
+name = "db"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "config",
+ "serde",
+ "sled",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5755,11 +5768,11 @@ version = "1.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bincode",
  "bollard",
  "chrono",
  "chrono-humanize",
  "config",
+ "db",
  "futures",
  "hex",
  "machine",
@@ -5770,7 +5783,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2 0.11.0",
- "sled",
  "tokio",
  "tokio-util",
  "tracing",

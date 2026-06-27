@@ -1,8 +1,6 @@
-use serde::{Deserialize, Serialize};
+use db::SledManager;
 
-use crate::db::SledManager;
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct App {
     pub is_connected: bool,
     pub is_privileged: bool,
@@ -10,8 +8,7 @@ pub struct App {
 
 pub struct AppStore;
 
-impl SledManager for AppStore {
-    type Item = App;
+impl SledManager<App> for AppStore {
     const TREE_NAME: &'static str = "app";
 }
 

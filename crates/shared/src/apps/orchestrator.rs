@@ -19,10 +19,11 @@ use crate::{
     },
     core::{dispatch::Dispatch, manager::Manager},
     db::{
-        Database, app::AppStore, prefs::PrefsStore, profile::ProfileStore,
-        rule::RuleStore, vault::VaultStore,
+        app::AppStore, prefs::PrefsStore, profile::ProfileStore, rule::RuleStore,
+        vault::VaultStore,
     },
 };
+use db::Database;
 
 /// A singleton instance of the Application Management Orchestrator.
 ///
