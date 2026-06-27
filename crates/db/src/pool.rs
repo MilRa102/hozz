@@ -1,5 +1,6 @@
-use anyhow::Context;
 use std::path::Path;
+
+use anyhow::Context;
 
 /// A static cell that holds the global Sled database instance.
 ///

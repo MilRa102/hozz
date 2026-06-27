@@ -1,5 +1,6 @@
-use crate::core::models::rule::Rule;
 use db::SledManager;
+
+use crate::core::models::rule::Rule;
 
 pub struct RuleStore;
 

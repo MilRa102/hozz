@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use db::SledManager;
 
 use crate::{apps::Orchestrator, core::models::conf::default_rules};
-use db::SledManager;
 
 /// A trait defining the interface for managing proxy rules.
 ///

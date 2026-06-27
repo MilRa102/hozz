@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use db::SledManager;
 
 use crate::{
     apps::{LoggingLayer, NodeManager, Orchestrator, Profile, proxy::Source},
     core::models::conf::Provider,
 };
-use db::SledManager;
 
 /// A trait defining the interface for managing proxy profiles.
 ///

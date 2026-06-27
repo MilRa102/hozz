@@ -1,6 +1,7 @@
 use std::{io::Error, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use db::SledManager;
 use futures::StreamExt;
 use tokio::time::sleep;
 use tokio_util::{
@@ -12,7 +13,6 @@ use crate::{
     apps::{LoggingLayer, NodeManager, ORCH, Orchestrator, node::Traffic},
     core::models::rule::{Rule, Target},
 };
-use db::SledManager;
 
 /// Trait defining the interface for background monitoring tasks.
 ///

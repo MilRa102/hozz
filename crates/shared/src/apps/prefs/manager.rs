@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use db::SledManager;
 use prefs::PreferenceKey;
 
 use crate::apps::Orchestrator;
-use db::SledManager;
 
 #[async_trait]
 pub trait PrefsManager {

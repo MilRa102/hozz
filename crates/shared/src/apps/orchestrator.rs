@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use config::CONF;
+use db::Database;
 use prefs::SettingsRegistry;
 use tokio::sync::OnceCell;
 
@@ -23,7 +24,6 @@ use crate::{
         vault::VaultStore,
     },
 };
-use db::Database;
 
 /// A singleton instance of the Application Management Orchestrator.
 ///

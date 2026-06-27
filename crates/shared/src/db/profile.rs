@@ -1,5 +1,6 @@
-use crate::apps::{Profile, proxy::profile::ProfileV1};
 use db::{SledManager, decode};
+
+use crate::apps::{Profile, proxy::profile::ProfileV1};
 
 pub struct ProfileStore;
 
