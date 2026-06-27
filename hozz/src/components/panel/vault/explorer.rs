@@ -2,12 +2,9 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use serde_json::{Map, Value as Json};
-use shared::{
-    apps::{
-        Orchestrator,
-        vault::{SecretItem, SecretManager, SecretType, TokenInfo},
-    },
-    db::vault::VaultConfig,
+use shared::apps::{
+    Orchestrator,
+    vault::{SecretItem, SecretManager, SecretType, TokenInfo, VaultConfig},
 };
 
 use super::{

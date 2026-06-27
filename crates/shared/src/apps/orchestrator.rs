@@ -10,19 +10,18 @@ use tokio::sync::OnceCell;
 
 use crate::{
     apps::{
+        app_store::AppStore,
         prefs::{
             AllowLanCapability, AutostartCapability, ContainerCapability,
             FakeIpCapability, FindProcessCapability, GatewayCapability, PolicyCapability,
-            ResourceCapability, SystemProxyCapability, VaultCapability,
+            PrefsStore, ResourceCapability, SystemProxyCapability, VaultCapability,
         },
+        proxy::{ProfileStore, RuleStore},
         state::StateManager,
         tasks::BackgroundTasks,
-    },
-    core::{dispatch::Dispatch, manager::Manager},
-    db::{
-        app::AppStore, prefs::PrefsStore, profile::ProfileStore, rule::RuleStore,
         vault::VaultStore,
     },
+    core::{dispatch::Dispatch, manager::Manager},
 };
 
 /// A singleton instance of the Application Management Orchestrator.

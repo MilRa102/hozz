@@ -1,3 +1,4 @@
+mod app_store;
 mod alert;
 pub mod docker;
 mod orchestrator;

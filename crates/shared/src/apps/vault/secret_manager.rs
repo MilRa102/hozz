@@ -6,12 +6,9 @@ use vaultrs::{
     kv2,
 };
 
-use crate::{
-    apps::{
-        LoggingLayer, Orchestrator,
-        vault::{SecretItem, TokenInfo},
-    },
-    db::vault::SecretVisit,
+use crate::apps::{
+    LoggingLayer, Orchestrator,
+    vault::{SecretItem, SecretVisit, TokenInfo},
 };
 
 /// A trait defining the interface for managing secrets in a Vault system.

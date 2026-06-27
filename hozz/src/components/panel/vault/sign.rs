@@ -2,12 +2,9 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::md_action_icons::MdLock;
-use shared::{
-    apps::{
-        LoggingLayer, Orchestrator,
-        vault::{SecretManager, TokenInfo},
-    },
-    db::vault::VaultConfig,
+use shared::apps::{
+    LoggingLayer, Orchestrator,
+    vault::{SecretManager, TokenInfo, VaultConfig},
 };
 
 use crate::{components::pet::ZeroError, utils::Icon};

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::md_action_icons::MdLockOutline;
-use shared::db::vault::SecretVisit;
+use shared::apps::vault::SecretVisit;
 
 use crate::utils::Icon;
 
