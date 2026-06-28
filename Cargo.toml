@@ -5,7 +5,8 @@ members = [
     "crates/config",
     "crates/machine",
     "crates/telemetry",
-    "crates/prefs", "crates/db",
+    "crates/prefs",
+    "crates/db",
 ]
 resolver = "2"
 
@@ -16,17 +17,23 @@ authors = ["MR"]
 publish = false
 
 [workspace.dependencies]
-anyhow = "1.0"
+anyhow = "1.0.103"
 async-trait = "0.1"
 futures = "0.3"
 interprocess = "2.0"
 hex = "0.4"
-reqwest = { version = "0.13.4", features = ["json", "stream"] }
-secrecy = { version = "0.10.3", features = ["serde"] }
 serde_json = "1.0.150"
 serde_yaml = "0.9"
 sha2 = "0.11"
 tracing = "0.1.44"
+
+[workspace.dependencies.reqwest]
+version = "0.13.4"
+features = ["json", "stream"]
+
+[workspace.dependencies.secrecy]
+version = "0.10.3"
+features = ["serde"]
 
 [workspace.dependencies.serde]
 version = "1.0.228"
