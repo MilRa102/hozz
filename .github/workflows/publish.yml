@@ -1,0 +1,87 @@
+name: Build Hozz
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-desktop:
+     name: Build on ${{ matrix.os.name }}
+     runs-on: ${{ matrix.os.runner }}
+
+     strategy:
+       fail-fast: false
+       matrix:
+         os:
+          - name: Linux
+            runner: ubuntu-latest
+            package: deb
+          - name: Windows
+            runner: windows-latest
+            package: msi
+
+     steps:
+      # ==================================== #
+      #            Common toolchains         #
+      # ==================================== #
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+
+      # ==================================== #
+      #              Only Linux              #
+      # ==================================== #  
+      - name: Install system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libayatana-appindicator3-dev librsvg2-dev
+
+
+      # ==================================== #
+      #             Common install           #
+      # ==================================== #
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall-action@v2
+
+      - name: Install Dioxus CLI
+        run: cargo binstall dioxus-cli -y
+
+
+      # ==================================== #
+      #             Build & Collect          #
+      # ==================================== #
+      - name: Build Hozz Bundle
+        run: dx bundle --release --desktop --package "hozz" --package-types "${{ matrix.os.package }}"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hozz-bundle-${{ matrix.os.name }}
+          path: target/dx/hozz/bundle/**/*.${{ matrix.os.package }}
+
+  release:
+    name: Create GitHub Release
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    permissions: 
+      contents: write
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
