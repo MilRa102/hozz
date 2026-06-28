@@ -10,7 +10,10 @@ use tokio_util::{
 };
 
 use crate::{
-    apps::{LoggingLayer, NodeManager, ORCH, Orchestrator, node::Traffic},
+    apps::{
+        LoggingLayer, NodeManager, ORCH, Orchestrator, node::Traffic,
+        proxy::CoreController,
+    },
     core::models::rule::{Rule, Target},
 };
 
@@ -287,8 +290,6 @@ impl BackgroundTasks for Orchestrator {
 
             #[cfg(target_os = "linux")]
             {
-                use crate::apps::proxy::CoreController;
-
                 if let Err(e) = self.fetch_real_ip().await {
                     tracing::error!(error = %e, "Failed to fetch real IP");
                 }
