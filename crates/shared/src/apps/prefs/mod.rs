@@ -6,6 +6,6 @@ mod system;
 
 pub use manager::PrefsManager;
 pub use modules::*;
-pub(crate) use network::*;
+pub use network::*;
 pub use store::PrefsStore;
 pub(crate) use system::*;

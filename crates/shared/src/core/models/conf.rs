@@ -231,8 +231,6 @@ pub struct Profile {
 
 impl Default for Mihomo {
     fn default() -> Self {
-        let mut rules = default_rules();
-        rules.push("MATCH,AUTO".to_string());
         Self {
             net: Net::default(),
             geo_mode: true,
@@ -249,7 +247,7 @@ impl Default for Mihomo {
             proxies: Vec::new(),
             groups: vec![GroupProxy::default()],
             providers: HashMap::new(),
-            rules,
+            rules: Vec::new(),
         }
     }
 }
@@ -398,20 +396,4 @@ impl Provider {
             ..Default::default()
         }
     }
-}
-
-#[must_use]
-pub fn default_rules() -> Vec<String> {
-    vec![
-        "IP-CIDR,127.0.0.1/8,DIRECT,no-resolve".to_string(),
-        "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve".to_string(),
-        "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve".to_string(),
-        "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve".to_string(),
-        "GEOIP,RU,DIRECT".to_string(),
-        "GEOSITE,yandex,DIRECT".to_string(),
-        "GEOIP,CN,AUTO".to_string(),
-        "GEOSITE,google,AUTO".to_string(),
-        "GEOSITE,azure,AUTO".to_string(),
-        "GEOSITE,microsoft,AUTO".to_string(),
-    ]
 }

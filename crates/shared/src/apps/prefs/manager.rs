@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use db::SledManager;
-use prefs::PreferenceKey;
+use prefs::{AppPrefs, PreferenceKey};
 
 use crate::apps::Orchestrator;
 
@@ -12,6 +12,8 @@ pub trait PrefsManager {
     async fn sync_preferences(self: &Arc<Self>) -> anyhow::Result<()>;
 
     fn get_into_bool(self: &Arc<Self>, key: &str) -> bool;
+
+    fn get_origin(self: &Arc<Self>, key: &str) -> Option<AppPrefs>;
 
     async fn set_preference(self: &Arc<Self>, k: &str, v: &str) -> anyhow::Result<()>;
 
@@ -63,9 +65,13 @@ impl PrefsManager for Orchestrator {
         Ok(())
     }
 
+    fn get_origin(self: &Arc<Self>, key: &str) -> Option<AppPrefs> {
+        self.prefs.get(key).ok().flatten()
+    }
+
     fn get_into_bool(self: &Arc<Self>, key: &str) -> bool {
-        match self.prefs.get(key) {
-            Ok(Some(pref)) => pref.as_bool(),
+        match self.get_origin(key) {
+            Some(pref) => pref.as_bool(),
             _ => false,
         }
     }

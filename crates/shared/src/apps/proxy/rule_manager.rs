@@ -1,8 +1,14 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use db::SledManager;
+use prefs::PreferenceKey;
 
-use crate::{apps::Orchestrator, core::models::conf::default_rules};
+use crate::apps::{
+    Orchestrator, PrefsManager,
+    prefs::{SplitRouteCapability, SplitRouteRules},
+};
 
 /// A trait defining the interface for managing proxy rules.
 ///
@@ -22,7 +28,7 @@ pub(crate) trait RuleManager {
     ///
     /// # Returns
     /// * `Result<()>` - Success if rules are synchronized, or an error if failed.
-    async fn sync_rules(&self) -> Result<()>;
+    async fn sync_rules(self: &Arc<Self>) -> Result<()>;
 }
 
 #[async_trait]
@@ -36,9 +42,15 @@ impl RuleManager for Orchestrator {
     ///
     /// # Arguments
     /// * `self` - A reference to the rule manager instance.
-    async fn sync_rules(&self) -> Result<()> {
+    async fn sync_rules(self: &Arc<Self>) -> Result<()> {
         let rules = self.rules.all()?;
-        let mut active_rules = default_rules();
+        let pref = self.get_origin(SplitRouteCapability::ID);
+
+        let routing = match pref {
+            Some(pref) => pref.value.parse().unwrap_or_default(),
+            None => SplitRouteRules::default(),
+        };
+        let mut active_rules = routing.as_rules();
 
         for rule in rules
             .iter()
@@ -46,7 +58,7 @@ impl RuleManager for Orchestrator {
         {
             active_rules.push(rule.to_rule());
         }
-        active_rules.push("MATCH,AUTO".to_string());
+        active_rules.extend(SplitRouteRules::match_rule());
 
         {
             let mut cfg = self.dispatch.conf.write().await;

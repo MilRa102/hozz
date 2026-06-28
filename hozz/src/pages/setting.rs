@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use dioxus::{logger::tracing, prelude::*};
 use dioxus_free_icons::icons::md_action_icons::MdAnchor;
-use prefs::Category;
+use prefs::{Category, SettingMeta};
 use shared::apps::{LoggingLayer, Orchestrator, PrefsManager};
 
 use crate::{
@@ -28,7 +28,7 @@ pub fn SettingsView() -> Element {
     // Состояние поиска
     let mut search_query = use_signal(String::new);
     let mut active_category = use_signal(|| Category::System);
-    let mut states = use_signal(HashMap::<String, bool>::new);
+    let mut states = use_signal(HashMap::<String, String>::new);
 
     let search_text = search_query();
     let is_searching = !search_text.trim().is_empty();
@@ -39,15 +39,20 @@ pub fn SettingsView() -> Element {
         orch.registry.by_category(active_category())
     };
 
-    let arch = orch.clone();
-    let meta_is_active = move |setting_id: String| {
-        states()
-            .get(&setting_id)
-            .copied()
-            .unwrap_or_else(|| arch.get_into_bool(&setting_id))
-    };
-
     let popular_tags = orch.registry.all_tags();
+    let settings_to_render: Vec<(SettingMeta, String, String)> = displayed_settings
+        .iter()
+        .cloned()
+        .map(|meta| {
+            let value = states().get(meta.id).cloned().unwrap_or_else(|| {
+                orch.get_origin(meta.id)
+                    .map(|pref| pref.value)
+                    .unwrap_or_else(|| meta.default_value.to_string())
+            });
+            let setting_id = meta.id.to_string();
+            (meta, value, setting_id)
+        })
+        .collect();
 
     rsx! {
         div { class: "flex h-full w-full bg-transparent overflow-hidden text-zinc-200 animate-fade-in",
@@ -128,26 +133,24 @@ pub fn SettingsView() -> Element {
                                     }
                                 } else {
                                     div { class: "bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col shadow-sm divide-y divide-white/5",
-                                        for meta in displayed_settings {
-
+                                        for (meta, value, id) in settings_to_render.iter().cloned() {
                                             SettingRow {
                                                 key: "{meta.id}",
-                                                title: meta.title,
-                                                desc: meta.description,
-                                                requirements: meta.requirements.to_vec(),
-                                                is_active: meta_is_active(meta.id.to_string()),
-                                                ontoggle: {
+                                                meta: meta.clone(),
+                                                value: value.clone(),
+                                                onchange: {
                                                     let orch = orch.clone();
-                                                    move |new: bool| {
+                                                    move |new_value: String| {
                                                         let orch = orch.clone();
-                                                        let id = meta.id;
-                                                        states.write().insert(id.to_string(), new);
+                                                        let id = id.clone();
+                                                        let previous_value = value.clone();
+                                                        states.write().insert(id.clone(), new_value.clone());
                                                         spawn(async move {
-                                                            if let Err(e) = orch.toggle_preference(id).await {
+                                                            if let Err(e) = orch.set_preference(&id, &new_value).await {
                                                                 tracing::error!("Ошибка при переключении {}: {}", id, e);
                                                                 orch.warning(e.to_string());
 
-                                                                states.write().insert(id.to_string(), !new);
+                                                                states.write().insert(id.clone(), previous_value.clone());
                                                             }
                                                         });
                                                     }
@@ -176,25 +179,24 @@ pub fn SettingsView() -> Element {
                                     }
                                 } else {
                                     div { class: "bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col shadow-sm divide-y divide-white/5",
-                                        for meta in displayed_settings {
+                                        for (meta, value, id) in settings_to_render.iter().cloned() {
                                             SettingRow {
                                                 key: "{meta.id}",
-                                                title: meta.title,
-                                                desc: meta.description,
-                                                requirements: meta.requirements.to_vec(),
-                                                is_active: orch.get_into_bool(meta.id),
-                                                ontoggle: {
+                                                meta: meta.clone(),
+                                                value: value.clone(),
+                                                onchange: {
                                                     let orch = orch.clone();
-                                                    move |new: bool| {
+                                                    move |new_value: String| {
                                                         let orch = orch.clone();
-                                                        let id = meta.id;
-                                                        states.write().insert(id.to_string(), new);
+                                                        let id = id.clone();
+                                                        let previous_value = value.clone();
+                                                        states.write().insert(id.clone(), new_value.clone());
                                                         spawn(async move {
-                                                            if let Err(e) = orch.toggle_preference(id).await {
+                                                            if let Err(e) = orch.set_preference(&id, &new_value).await {
                                                                 tracing::error!("Ошибка при переключении {}: {}", id, e);
                                                                 orch.warning(e.to_string());
 
-                                                                states.write().insert(id.to_string(), !new);
+                                                                states.write().insert(id.clone(), previous_value.clone());
                                                             }
                                                         });
                                                     }

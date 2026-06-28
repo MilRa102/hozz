@@ -14,7 +14,8 @@ use crate::{
         prefs::{
             AllowLanCapability, AutostartCapability, ContainerCapability,
             FakeIpCapability, FindProcessCapability, GatewayCapability, PolicyCapability,
-            PrefsStore, ResourceCapability, SystemProxyCapability, VaultCapability,
+            PrefsStore, ResourceCapability, SplitRouteCapability, SystemProxyCapability,
+            VaultCapability,
         },
         proxy::{ProfileStore, RuleStore},
         state::StateManager,
@@ -151,6 +152,7 @@ impl Orchestrator {
         registry.register(FakeIpCapability);
         registry.register(FindProcessCapability);
         registry.register(SystemProxyCapability);
+        registry.register(SplitRouteCapability);
 
         // Create the orchestrator instance with all initialized components.
         let orch = Arc::new(Self {
