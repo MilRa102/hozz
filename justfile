@@ -48,3 +48,9 @@ clean:
     @printf "{{c_step}}=> 🧹 Cleaning project..{{c_reset}}\n"
     cargo clean
     @printf "{{c_done}}✔ Workspace is clean!{{c_reset}}\n"
+
+
+# Bumping version of the project (Usage: just bump minor или just bump major)
+bump LEVEL="patch":
+    @printf "{{c_step}}=> 📦 Bumping version to {{LEVEL}} level..{{c_reset}}\n"
+    cargo release {{LEVEL}} --workspace --no-publish --execute
