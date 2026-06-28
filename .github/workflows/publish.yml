@@ -49,7 +49,7 @@ jobs:
       #             Common install           #
       # ==================================== #
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall-action@v2
+        uses: cargo-bins/cargo-binstall@main
 
       - name: Install Dioxus CLI
         run: cargo binstall dioxus-cli -y
