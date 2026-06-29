@@ -98,22 +98,14 @@ impl CoreController for Orchestrator {
     /// Initializes the core controller by syncing all application data and restoring connection state.
     ///
     /// This method performs several initialization tasks:
-    /// 1. Ensures system privileges are granted if not already present via `ensure_privileges()`.
-    /// 2. If the application was previously connected (`app.is_connected`), it waits briefly (200ms)
+    /// 1. If the application was previously connected (`app.is_connected`), it waits briefly (200ms)
     ///    before attempting to restore the previous connection state via `toggle_connection(true)`.
-    /// 3. Synchronizes preferences, profiles, and rules from storage using their respective sync methods.
+    /// 2. Synchronizes preferences, profiles, and rules from storage using their respective sync methods.
     ///
     /// # Arguments
     /// * `self` - A reference to the core controller instance.
     async fn bootstrap(self: &Arc<Self>) {
         let app = self.apps.fetch();
-
-        // Ensure privileges if not already granted
-        if !app.is_privileged
-            && let Err(e) = self.ensure_privileges().await
-        {
-            tracing::error!(error = %e, "Failed to ensure privileges");
-        }
 
         // Restore previous connection state if applicable
         if app.is_connected {

@@ -7,7 +7,8 @@ use serde_yaml::Value as YamlValue;
 
 const DIRECT: &str = "DIRECT";
 const CHECK_URL: &str = "https://www.gstatic.com/generate_204";
-pub const DATA_URL: &str = "https://cdn.dc1.ru.govpsfx.com/node-bucket/services/home";
+pub const DATA_URL: &str =
+    "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/";
 
 /// Mihomo configuration file
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -257,8 +258,8 @@ impl Default for Geo {
         Self {
             geoip: format!("{DATA_URL}/geoip.dat"),
             geosite: format!("{DATA_URL}/geosite.dat"),
-            mmdb: format!("{DATA_URL}/geoip.db"),
-            asn: format!("{DATA_URL}/geosite.db"),
+            mmdb: format!("{DATA_URL}/country.mmdb"),
+            asn: format!("{DATA_URL}/GeoLite2-ASN.mmdb"),
         }
     }
 }
