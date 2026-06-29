@@ -27,6 +27,10 @@ serde_yaml = "0.9"
 sha2 = "0.11"
 tracing = "0.1.44"
 
+[workspace.dependencies.rkyv]
+version = "0.8.16"
+features = ["bytecheck"]
+
 [workspace.dependencies.reqwest]
 version = "0.13.4"
 features = ["json", "stream"]

@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+rkyv = { workspace = true }
 serde = { workspace = true }
 
 [lints]

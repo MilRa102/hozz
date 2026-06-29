@@ -42,17 +42,6 @@ pub trait CoreController {
     /// in a spawned task to ensure graceful shutdown without blocking the main thread.
     fn closing();
 
-    /// Verifies and grants necessary system privileges for proxy operation.
-    ///
-    /// This method ensures that the application has the required capabilities (e.g., CAP_NET_ADMIN)
-    /// to operate the TUN device and configure network routing. If privileges are missing, it attempts
-    /// to grant them via `SysProxyController`. Upon success, it updates the application state to reflect
-    /// privileged status and notifies the user.
-    ///
-    /// # Returns
-    /// * `Result<()>` - Success if privileges are confirmed or already present, or an error if privilege escalation fails.
-    async fn ensure_privileges(&self) -> Result<()>;
-
     /// Toggles the TUN device and system proxy on/off with retry logic.
     ///
     /// This method attempts to toggle the connection state up to 3 times. For each attempt, it:
@@ -151,27 +140,6 @@ impl CoreController for Orchestrator {
                 arch.dispatch.core.stop().await;
             }
         });
-    }
-
-    /// Verifies and grants necessary system privileges for proxy operation.
-    ///
-    /// This method ensures that the application has the required capabilities (e.g., CAP_NET_ADMIN)
-    /// to operate the TUN device and configure network routing. If privileges are missing, it attempts
-    /// to grant them via `SysProxyController`. Upon success, it updates the application state to reflect
-    /// privileged status and notifies the user.
-    ///
-    /// # Returns
-    /// * `Result<()>` - Success if privileges are confirmed or already present, or an error if privilege escalation fails.
-    async fn ensure_privileges(&self) -> Result<()> {
-        // Delegate privilege check to the core controller
-        self.dispatch.core.ensure_capabilities().await?;
-
-        let mut app = self.apps.fetch();
-        app.is_privileged = true;
-        self.apps.update(&app)?;
-
-        self.ok("Привилегии подтверждены");
-        Ok(())
     }
 
     /// Toggles the TUN device and system proxy on/off with retry logic.

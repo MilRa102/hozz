@@ -1,20 +1,33 @@
-/// Decodes a byte slice into a generic type `T`.
+use rkyv::{
+    Archive, Deserialize, Serialize,
+    api::high::{HighDeserializer, HighSerializer, HighValidator},
+    bytecheck::CheckBytes,
+    rancor::Error,
+    ser::allocator::ArenaHandle,
+    util::AlignedVec,
+};
+
+/// Decodes an unaligned byte slice from Sled into a generic type `T`.
 ///
-/// This function deserializes binary data using the `bincode` crate and converts it into
-/// the specified type `T`. The type `T` must implement both `DeserializeOwned` and `Clone`.
-/// If deserialization fails, it returns an error wrapped in `anyhow::Error`.
-///
-/// # Arguments
-/// * `bytes` - A byte slice containing the serialized data.
-/// * `T` - The target type to deserialize into.
-///
-/// # Returns
-/// * `Result<T>` - Success if deserialization is successful, or an error if failed.
+/// This implementation uses `rkyv 0.8`. Since Sled's `IVec` is not guaranteed
+/// to be memory-aligned, we use `rkyv::util::AlignedVec` to safely copy
+/// the bytes before accessing the archived root.
 pub fn decode<T>(bytes: &[u8]) -> anyhow::Result<T>
 where
-    T: serde::de::DeserializeOwned + Clone,
+    T: Archive,
+    T::Archived: for<'a> CheckBytes<HighValidator<'a, Error>>
+        + Deserialize<T, HighDeserializer<Error>>,
 {
-    bincode::deserialize(bytes).map_err(Into::into)
+    let mut aligned_bytes = AlignedVec::<16>::with_capacity(bytes.len());
+    aligned_bytes.extend_from_slice(bytes);
+
+    let archived = rkyv::access::<T::Archived, Error>(&aligned_bytes)
+        .map_err(|e| anyhow::anyhow!("Rkyv validation failed: {e}"))?;
+
+    let item: T = rkyv::deserialize::<T, Error>(archived)
+        .map_err(|e| anyhow::anyhow!("Rkyv deserialization failed: {e}"))?;
+
+    Ok(item)
 }
 
 /// A trait defining the interface for managing data storage using Sled.
@@ -36,10 +49,7 @@ where
 /// * `save()` - Saves an item to the database with the given key.
 /// * `get()` - Retrieves a specific item from the database by its key.
 /// * `delete()` - Removes an item from the database by its key.
-pub trait SledManager<I>
-where
-    I: serde::Serialize + serde::de::DeserializeOwned + Clone,
-{
+pub trait SledManager<I> {
     /// The name of the Sled tree to use for this manager.
     const TREE_NAME: &'static str;
 
@@ -79,7 +89,12 @@ where
     ///
     /// # Returns
     /// * `Result<I>` - Success if deserialization is successful, or an error if failed.
-    fn decode(bytes: &[u8]) -> anyhow::Result<I> {
+    fn decode(bytes: &[u8]) -> anyhow::Result<I>
+    where
+        I: Archive,
+        I::Archived: for<'a> CheckBytes<HighValidator<'a, Error>>
+            + Deserialize<I, HighDeserializer<Error>>,
+    {
         decode(bytes)
     }
 
@@ -91,7 +106,12 @@ where
     ///
     /// # Returns
     /// * `Result<Vec<I>>` - Success if all items are retrieved, or an error if the tree cannot be accessed.
-    fn all(&self) -> anyhow::Result<Vec<I>> {
+    fn all(&self) -> anyhow::Result<Vec<I>>
+    where
+        I: Archive,
+        I::Archived: for<'a> CheckBytes<HighValidator<'a, Error>>
+            + Deserialize<I, HighDeserializer<Error>>,
+    {
         let tree = self.tree()?;
         Ok(tree
             .iter()
@@ -112,10 +132,14 @@ where
     ///
     /// # Returns
     /// * `Result<()>` - Success if the item is saved, or an error if failed.
-    fn save(&self, key: &str, item: &I) -> anyhow::Result<()> {
+    fn save(&self, key: &str, item: &I) -> anyhow::Result<()>
+    where
+        I: for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, Error>>,
+    {
         let tree = self.tree()?;
-        let value = bincode::serialize(item)?;
-        tree.insert(key, value)?;
+        let value = rkyv::to_bytes::<Error>(item)
+            .map_err(|e| anyhow::anyhow!("Rkyv serialization failed: {e}"))?;
+        tree.insert(key, value.into_vec())?;
         tree.flush()?;
         Ok(())
     }
@@ -131,7 +155,12 @@ where
     ///
     /// # Returns
     /// * `Result<Option<I>>` - Success if the item is retrieved, or an error if failed.
-    fn get(&self, key: &str) -> anyhow::Result<Option<I>> {
+    fn get(&self, key: &str) -> anyhow::Result<Option<I>>
+    where
+        I: Archive,
+        I::Archived: for<'a> CheckBytes<HighValidator<'a, Error>>
+            + Deserialize<I, HighDeserializer<Error>>,
+    {
         let tree = self.tree()?;
         if let Some(bytes) = tree.get(key)? {
             let item = Self::decode(&bytes)?;

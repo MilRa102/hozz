@@ -1,9 +1,10 @@
 use db::SledManager;
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(
+    Debug, Clone, Default, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, PartialEq,
+)]
 pub struct App {
     pub is_connected: bool,
-    pub is_privileged: bool,
 }
 
 pub struct AppStore;

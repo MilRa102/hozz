@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// Глобальные настройки пользователя
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
 pub struct AppPrefs {
     pub key: String,
     pub value: String,

@@ -1,15 +1,15 @@
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub enum Target {
     App,
     #[default]
     Host,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub enum Direction {
     Direct,
     Reject,
@@ -17,7 +17,7 @@ pub enum Direction {
     Auto,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub struct Rule {
     pub id: String,
     pub name: String,
@@ -28,7 +28,7 @@ pub struct Rule {
     pub amt: u16,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub struct RuleBuilder {
     pub name: String,
     pub target: Target,

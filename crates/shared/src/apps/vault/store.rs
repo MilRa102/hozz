@@ -1,14 +1,14 @@
 use db::SledManager;
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub struct SecretVisit {
     pub mount: String,
     pub path: String,
     pub count: usize,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub struct VaultConfig {
     pub url: String,
     pub token: String,

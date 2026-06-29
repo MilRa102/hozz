@@ -9,7 +9,7 @@ publish.workspace = true
 config = { path = "../config" }
 
 anyhow = { workspace = true }
-bincode = "1.3"
+rkyv = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

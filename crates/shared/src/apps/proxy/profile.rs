@@ -1,29 +1,19 @@
-use config::default_true;
-use serde::{Deserialize, Serialize};
-
 use crate::utils::generate_id;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct ProfileV1 {
-    pub id: String,
-    pub source: Source,
-    pub last_update: u64,
-    pub update_interval: u64,
-}
+use config::default_true;
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// Proxy node subscription profile
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub struct Profile {
     pub id: String,
     pub name: Option<String>,
     pub source: Source,
     pub update_interval: u64,
-    #[serde(default = "default_true")]
     pub enabled: bool,
 }
 
 /// Listing sources for subscription profiles
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq)]
 pub enum Source {
     Remote(String),
 }
