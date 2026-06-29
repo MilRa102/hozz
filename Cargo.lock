@@ -1128,7 +1128,6 @@ dependencies = [
  "anyhow",
  "config",
  "rkyv",
- "serde",
  "sled",
  "tokio",
  "tracing",
@@ -4742,7 +4741,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "rkyv",
- "serde",
 ]
 
 [[package]]

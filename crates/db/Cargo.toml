@@ -10,7 +10,6 @@ config = { path = "../config" }
 
 anyhow = { workspace = true }
 rkyv = { workspace = true }
-serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

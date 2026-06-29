@@ -5,8 +5,7 @@ use dioxus_free_icons::icons::{
 };
 use prefs::{Requirement, SettingMeta};
 
-use crate::components::switch::control::SettingControl;
-use crate::utils::Icon;
+use crate::{components::switch::control::SettingControl, utils::Icon};
 
 #[component]
 pub(crate) fn SettingRow(

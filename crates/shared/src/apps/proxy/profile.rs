@@ -1,6 +1,7 @@
-use crate::utils::generate_id;
 use config::default_true;
 use rkyv::{Archive, Deserialize, Serialize};
+
+use crate::utils::generate_id;
 
 /// Proxy node subscription profile
 #[derive(Debug, Clone, Archive, Serialize, Deserialize, PartialEq)]
