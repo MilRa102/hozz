@@ -4,6 +4,8 @@ use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MihomoConfig {
+    #[serde(default = "default_version")]
+    pub version: String,
     #[serde(default = "default_url")]
     pub url: String,
     #[serde(default = "default_token")]
@@ -17,12 +19,17 @@ pub struct MihomoConfig {
 impl Default for MihomoConfig {
     fn default() -> Self {
         Self {
+            version: default_version(),
             url: default_url(),
             token: default_token(),
             retry: default_retry(),
             mixed_port: default_mixed_port(),
         }
     }
+}
+
+fn default_version() -> String {
+    "v1.19.27".to_string()
 }
 
 fn default_url() -> String {

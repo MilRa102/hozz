@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use anyhow::{Context, Result};
 use config::CONF;
 use futures::StreamExt;
+use reqwest::header::USER_AGENT;
 use tokio::{
     fs,
     io::AsyncWriteExt,
@@ -11,7 +12,7 @@ use tokio::{
     time::sleep,
 };
 
-use super::models::conf::{DATA_URL, Mihomo};
+use super::models::conf::Mihomo;
 
 #[derive(Debug, Default, Clone)]
 pub struct Manager {
@@ -19,41 +20,78 @@ pub struct Manager {
 }
 
 impl Manager {
-    #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn gh_target() -> (&'static str, &'static str, &'static str) {
+        let gh_os = match std::env::consts::OS {
+            "macos" => "darwin",
+            "windows" => "windows",
+            _ => "linux",
+        };
+
+        let gh_arch = match std::env::consts::ARCH {
+            "x86_64" => "amd64",
+            "aarch64" => "arm64",
+            arch => arch,
+        };
+
+        let extension = if std::env::consts::OS == "windows" {
+            ".exe"
+        } else {
+            ""
+        };
+
+        (gh_os, gh_arch, extension)
     }
 
     fn pid_path() -> PathBuf {
         CONF.workspace.data_dir.join("mihomo.pid")
     }
 
-    #[must_use]
     pub fn bin_path() -> PathBuf {
-        let mut path = CONF.workspace.bin_dir.join("mihomo");
-        if cfg!(windows) {
-            path.set_extension(".exe");
-        }
-        path
+        let (gh_os, gh_arch, extension) = Self::gh_target();
+        let version = &CONF.mihomo.version;
+
+        let file_name = format!("mihomo-{version}-{gh_os}-{gh_arch}{extension}");
+        CONF.workspace.bin_dir.join(file_name)
     }
 
     pub async fn download<F>(on_progress: F) -> Result<()>
     where
         F: Fn(f64) + Send + 'static,
     {
-        use std::env;
-
         let bin_path = Self::bin_path();
         if bin_path.exists() {
             return Ok(());
         }
 
-        let os = env::consts::OS;
-        let extension = if os == "windows" { ".exe" } else { "" };
-        let url = format!("{DATA_URL}/mihomo{extension}");
+        let (gh_os, gh_arch, extension) = Self::gh_target();
+        let version = CONF.mihomo.version.clone();
+
+        let url = format!(
+            "https://github.com/MilRa102/hozz-core/releases/download/{version}/mihomo-{gh_os}-{gh_arch}{extension}"
+        );
 
         let client = reqwest::Client::new();
-        let res = client.get(url).send().await?;
+        let res = client
+            .get(url)
+            .header(USER_AGENT, "Hozz-Manager")
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "Failed to download mihomo from GitHub: HTTP {}",
+                    res.status()
+                ),
+            )
+            .into());
+        }
+
         let total_size = res.content_length().unwrap_or(0);
 
         let mut file = fs::File::create(&bin_path).await?;
@@ -65,7 +103,6 @@ impl Manager {
             file.write_all(&chunk).await?;
             downloaded += chunk.len() as u64;
 
-            #[allow(clippy::cast_precision_loss)]
             if total_size > 0 {
                 on_progress(downloaded as f64 / total_size as f64);
             }

@@ -129,6 +129,7 @@ impl Orchestrator {
                 tracing::debug!(%progress, "Download progress");
             })
             .await?;
+            dispatch.core.ensure_capabilities().await?;
         }
 
         // Start the core application logic.
