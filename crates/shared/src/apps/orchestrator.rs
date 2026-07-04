@@ -173,6 +173,9 @@ impl Orchestrator {
         ORCH.set(orch.clone())
             .map_err(|_| anyhow::anyhow!("Orchestrator already initialized"))?;
 
+        // Waiting for components to start
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
         // Launch background tasks for metrics collection and health checks.
         Self::launch_background();
 

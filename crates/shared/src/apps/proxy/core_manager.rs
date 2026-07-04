@@ -94,21 +94,6 @@ impl CoreController for Orchestrator {
     /// # Arguments
     /// * `self` - A reference to the core controller instance.
     async fn bootstrap(self: &Arc<Self>) {
-        let app = self.apps.fetch();
-
-        // Restore previous connection state if applicable
-        if app.is_connected {
-            tokio::time::sleep(Duration::from_millis(200)).await;
-
-            match self.toggle_connection(true).await {
-                Ok(_) => tracing::info!("Restoring previous connection state.."),
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to restore the last connection");
-                    self.warning("Не удалось восстановить последнее соединение");
-                },
-            }
-        }
-
         // Sync preferences, profiles, and rules
         let (pref_res, prof_res, rules_res) = tokio::join!(
             self.sync_preferences(),
@@ -238,6 +223,7 @@ impl CoreController for Orchestrator {
                 Ok(response) if response.status().is_success() => {
                     let ip = response.text().await?;
                     self.state.update_ip(ip.trim());
+                    tracing::info!("IP address retrieved: {}", ip);
                     return Ok(());
                 },
                 // Retry case: Request failed but not max retries reached

@@ -105,7 +105,6 @@ pub struct Dns {
 
 /// Tun Interface configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 pub struct Tun {
     pub enable: bool,
     pub device: String,

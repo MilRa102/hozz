@@ -3,7 +3,8 @@ use std::{io::Read, sync::Arc, thread, time::Duration};
 use dioxus::{desktop::use_window, logger::tracing, prelude::*};
 use interprocess::local_socket::traits::ListenerExt;
 use shared::apps::{
-    LoggingLayer, ORCH, Orchestrator, Profile, node::GroupNode, proxy::CoreController,
+    LoggingLayer, NodeManager, ORCH, Orchestrator, Profile, node::GroupNode,
+    proxy::CoreController,
 };
 use tokio::time::sleep;
 
@@ -19,6 +20,7 @@ use crate::{
 pub(crate) struct AppState {
     pub is_connected: Signal<bool>,
     pub is_visible: Signal<bool>,
+    pub wait_pending: Signal<bool>,
     pub active_ip: Signal<String>,
     pub active_profile: Signal<String>,
     pub up: Signal<String>,
@@ -79,14 +81,10 @@ impl AppState {
         });
     }
 
-    pub(crate) fn select_profile(&mut self, name: String) {
-        self.active_profile.set(name);
-
+    pub(crate) fn select_profile(&mut self, group: String, name: String) {
         spawn(async move {
-            let arch = use_context::<Arc<Orchestrator>>();
-            if let Err(e) = arch.fetch_real_ip().await {
-                tracing::warn!(error = %e, "Failed to fetch real ip");
-            };
+            let arch = consume_context::<Arc<Orchestrator>>();
+            arch.select_active_in_group(&group, &name).await;
         });
     }
 }
@@ -162,9 +160,6 @@ fn App() -> Element {
             .clone()
     });
     use_context_provider(|| arch.clone());
-
-    let window = use_window();
-    arch.set_active(window.is_visible());
 
     let app_state = AppState::new(&arch);
     use_context_provider(|| app_state);

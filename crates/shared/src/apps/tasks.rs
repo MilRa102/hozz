@@ -71,8 +71,6 @@ impl BackgroundTasks for Orchestrator {
     /// - `connections_monitor`: Tracks and manages connection rules based on activity.
     /// - `tun_monitor`: Handles TUN device lifecycle (Windows) and IP fetching (Linux).
     fn launch_background() {
-        std::thread::sleep(Duration::from_millis(300));
-
         // Regular tasks
         tokio::spawn(async move {
             if let Some(arch) = ORCH.get() {
@@ -105,6 +103,8 @@ impl BackgroundTasks for Orchestrator {
     /// and updates the local state with received metrics. If the orchestrator is
     /// inactive or disconnected, it pauses monitoring to conserve resources.
     async fn traffic_monitor(&self) {
+        sleep(Duration::from_millis(700)).await;
+
         let client = &self.dispatch.api;
 
         loop {
@@ -149,6 +149,8 @@ impl BackgroundTasks for Orchestrator {
     /// Periodically fetches the latest group data from the API and updates the
     /// local storage. Pauses if the orchestrator is not active.
     async fn groups_monitor(&self) {
+        sleep(Duration::from_millis(600)).await;
+
         loop {
             // Check if we should pause monitoring due to inactivity
             if !self.is_active() {
@@ -167,6 +169,8 @@ impl BackgroundTasks for Orchestrator {
     /// (non-empty rules excluding "Match"), and creates/updates rules in the database.
     /// Triggers warnings for high-frequency requests to help users configure rules.
     async fn connections_monitor(&self) {
+        sleep(Duration::from_millis(700)).await;
+
         let client = &self.dispatch.api;
 
         loop {
@@ -259,6 +263,8 @@ impl BackgroundTasks for Orchestrator {
     ///   to restart the connection.
     /// - On Linux: Periodically fetches the real IP address of the node.
     async fn tun_monitor(self: &Arc<Self>) {
+        sleep(Duration::from_millis(500)).await;
+
         loop {
             // Check if we should pause monitoring due to disconnection
             if !self.is_connected() {
@@ -266,35 +272,26 @@ impl BackgroundTasks for Orchestrator {
                 continue;
             }
 
-            #[cfg(target_os = "windows")]
-            {
-                let cfg = self
-                    .dispatch
-                    .api
-                    .configs()
-                    .await
-                    .unwrap_or_default();
+            let cfg = self
+                .dispatch
+                .api
+                .configs()
+                .await
+                .unwrap_or_default();
 
-                let is_tun_alive = cfg.tun.enable == true;
-
-                if !is_tun_alive {
-                    tracing::warn!("TUN has disconnected. Restarting fuel...");
-                    if let Err(e) = self.toggle_connection(true).await {
-                        tracing::error!(error = %e, "Failed to toggle connection");
-                    }
-
-                    sleep(Duration::from_secs(15)).await;
-                    continue;
+            if !cfg.tun.enable {
+                tracing::warn!("TUN has disconnected. Restarting fuel...");
+                if let Err(e) = self.toggle_connection(true).await {
+                    tracing::error!(error = %e, "Failed to toggle connection");
                 }
             }
 
-            #[cfg(target_os = "linux")]
-            {
-                if let Err(e) = self.fetch_real_ip().await {
-                    tracing::error!(error = %e, "Failed to fetch real IP");
-                }
+            sleep(Duration::from_millis(200)).await;
+            if let Err(e) = self.fetch_real_ip().await {
+                tracing::error!(error = %e, "Failed to fetch real IP");
             }
-            sleep(Duration::from_secs(40)).await;
+
+            sleep(Duration::from_secs(30)).await;
         }
     }
 }

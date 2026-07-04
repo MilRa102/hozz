@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::io_icons::{IoArrowDown, IoArrowUp};
-use shared::apps::{NodeManager, Orchestrator};
 
 use crate::{
     components::{
@@ -16,7 +13,6 @@ use crate::{
 #[component]
 pub fn ProxyDashboard() -> Element {
     let mut state = use_context::<AppState>();
-    let wait_pending = use_signal(|| false);
 
     let traffic_up = state.up;
     let traffic_down = state.down;
@@ -24,6 +20,7 @@ pub fn ProxyDashboard() -> Element {
     let groups = (state.groups)();
     let active_ip = state.active_ip;
     let active_profile = state.active_profile;
+    let wait_pending = state.wait_pending;
 
     // Инвертированные "темные" стили для бейджей статуса
     let (status_bg, status_dot, status_text, btn_class, btn_text) = if wait_pending() {
@@ -124,14 +121,7 @@ pub fn ProxyDashboard() -> Element {
 
                                         NodeDropdownItems {
                                             nodes,
-                                            select: move |node_name: String| {
-                                                let group = group_name.clone();
-                                                spawn(async move {
-                                                    consume_context::<Arc<Orchestrator>>()
-                                                        .select_active_in_group(&group, &node_name).await;
-                                                    state.select_profile(node_name);
-                                                });
-                                            }
+                                            select: move |node_name: String| state.select_profile(group_name.clone(), node_name)
                                         }
                                     }
                                 }

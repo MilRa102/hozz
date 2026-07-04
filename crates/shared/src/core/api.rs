@@ -60,7 +60,6 @@ impl Client {
 
         if enable {
             config.tun.enable = enable;
-            config.tun.route = true;
         }
 
         let payload = to_value(config)?;
