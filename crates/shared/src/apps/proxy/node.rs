@@ -72,6 +72,7 @@ impl From<api::Proxies> for Vec<GroupNode> {
                         nodes.push(node);
                     }
                 }
+                nodes.sort_by_key(|n| n.latency);
 
                 groups.push(GroupNode {
                     name: name.clone(),

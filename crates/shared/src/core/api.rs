@@ -169,28 +169,27 @@ impl Client {
 
 impl Proxy {
     /// Get proxy name from Clash API
-    #[must_use]
     pub fn name(&self) -> String {
         self.name.clone()
     }
 
     /// Get proxy transport from Clash API
-    #[must_use]
     pub fn transport(&self) -> String {
         let transport = if self.udp { "udp" } else { "tcp" };
         transport.to_string()
     }
 
     /// Get proxy protocol from Clash API
-    #[must_use]
     pub fn protocol(&self) -> String {
         self.group_type.clone()
     }
 
     /// Get proxy latency from Clash API
-    #[must_use]
     pub fn latency(&self) -> u32 {
         let latency = self.history.last().cloned().unwrap_or_default();
+        if !self.alive {
+            return u32::MAX;
+        }
         latency.delay
     }
 }
