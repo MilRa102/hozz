@@ -286,9 +286,11 @@ impl BackgroundTasks for Orchestrator {
                 }
             }
 
-            sleep(Duration::from_millis(200)).await;
-            if let Err(e) = self.fetch_real_ip().await {
-                tracing::error!(error = %e, "Failed to fetch real IP");
+            if self.is_active() {
+                sleep(Duration::from_millis(200)).await;
+                if let Err(e) = self.fetch_real_ip().await {
+                    tracing::error!(error = %e, "Failed to fetch real IP");
+                }
             }
 
             sleep(Duration::from_secs(30)).await;
