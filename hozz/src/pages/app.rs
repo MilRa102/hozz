@@ -163,6 +163,9 @@ fn App() -> Element {
     });
     use_context_provider(|| arch.clone());
 
+    let window = use_window();
+    arch.set_active(window.is_visible());
+
     let app_state = AppState::new(&arch);
     use_context_provider(|| app_state);
     app_state.bootstrap();
