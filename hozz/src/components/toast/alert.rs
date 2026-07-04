@@ -27,7 +27,6 @@ pub(crate) fn Toaster() -> Element {
     });
 
     rsx! {
-        // Перенесли в правый нижний угол (bottom-6 right-6) и изменили выравнивание
         div { class: "fixed bottom-6 right-6 z-[100] flex flex-col items-end pointer-events-none gap-3 w-full max-w-sm",
             for alert in alerts() {
                 div { class: "pointer-events-auto w-full", key: "{alert.id()}",
@@ -52,52 +51,51 @@ fn ToastItem(alert: Alert, on_remove: EventHandler<String>) -> Element {
         on_remove.call(id.to_string());
     });
 
-    // Избавляемся от интерполяции строк, отдаем Tailwind'у полные классы.
-    // Сделали светлые карточки с акцентными иконками и левым бордером (типично для GitLab/VS Code)
+    // Используем hex-цвета из палитры Tailwind для идеального совпадения с цветом бордера
     let (border_color, icon_elem) = match &alert {
         Alert::Error { .. } => (
-            "border-red-500/20",
+            "border-l-red-500",
             rsx!(Icon {
                 icon: MdError,
-                color: "red",
-            }),
+                color: "#ef4444"
+            }), // red-500
         ),
         Alert::Ok { .. } => (
-            "border-green-500/20",
+            "border-l-emerald-500",
             rsx!(Icon {
                 icon: MdDone,
-                color: "green",
-            }),
+                color: "#10b981"
+            }), // emerald-500
         ),
         Alert::Warning { .. } => (
-            "border-amber-500/20",
+            "border-l-amber-500",
             rsx!(Icon {
                 icon: MdWarning,
-                color: "orange",
-            }),
+                color: "#f59e0b"
+            }), // amber-500
         ),
         Alert::Info { .. } => (
-            "border-blue-500/20",
+            "border-l-blue-500",
             rsx!(Icon {
                 icon: MdInfo,
-                color: "blue",
-            }),
+                color: "#3b82f6"
+            }), // blue-500
         ),
     };
 
     rsx! {
-        // Белый фон, тонкая тень, цветная левая граница
-        div { class: "flex items-start gap-3 p-4 bg-zinc-950 border-l-4 border-y border-r {border_color} rounded-xl shadow-lg opacity-70",
+        // Плотный фон, базовая обводка, цветной левый акцент и правильная тень
+        div { class: "flex items-start gap-3 p-4 bg-zinc-900 border border-zinc-800 border-l-4 {border_color} rounded-lg shadow-xl shadow-black/20",
             div { class: "shrink-0 mt-0.5 text-lg", {icon_elem} }
 
-            span { class: "flex-1 text-sm text-zinc-300 leading-snug",
+            span { class: "flex-1 text-sm font-medium text-zinc-200 leading-relaxed",
                 "{alert.message()}"
             }
 
             button {
-                class: "shrink-0 text-zinc-400 hover:text-zinc-600 transition-colors focus:outline-none",
+                class: "shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer",
                 onclick: move |_| on_remove.call(id.to_string()),
-                Icon { icon: MdClose }
+                Icon { icon: MdClose, color: "#a1a1aa" } // zinc-400
             }
         }
     }
