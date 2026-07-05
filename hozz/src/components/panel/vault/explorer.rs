@@ -141,6 +141,7 @@ pub fn VaultExplorer(
                         has_cursor: !cursor().is_empty(),
                         on_back: back_evt,
                         on_item_click: move |item: SecretItem| {
+                            search_query.set(String::new());
                             let orch = arch.clone();
                             if selected_mount().is_empty() {
                                 selected_mount.set(item.path.clone());
