@@ -11,7 +11,7 @@ impl AutostartApp {
                 path.to_str()
                     .ok_or(anyhow::anyhow!("Failed to get path"))?,
             )
-            .set_args(&["--mininmized"])
+            .set_args(&["--minimized"])
             .build()?;
 
         Ok(launch)
