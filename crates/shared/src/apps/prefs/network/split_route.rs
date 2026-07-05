@@ -57,15 +57,23 @@ impl SplitRouteRules {
                 "GEOSITE,google,AUTO",
                 "GEOSITE,azure,AUTO",
                 "GEOSITE,microsoft,AUTO",
+                "GEOSITE,github,AUTO",
                 "GEOSITE,youtube,AUTO",
                 "GEOSITE,telegram,AUTO",
+                "GEOSITE,twitter,AUTO",
+                "GEOSITE,netflix,AUTO",
+                "GEOSITE,spotify,AUTO",
             ],
             Self::Eu => vec![
                 "GEOSITE,google,DIRECT",
                 "GEOSITE,azure,DIRECT",
                 "GEOSITE,microsoft,DIRECT",
+                "GEOSITE,github,DIRECT",
                 "GEOSITE,youtube,DIRECT",
                 "GEOSITE,telegram,DIRECT",
+                "GEOSITE,twitter,DIRECT",
+                "GEOSITE,netflix,DIRECT",
+                "GEOSITE,spotify,DIRECT",
             ],
         };
         rules.extend(custom_rules);
