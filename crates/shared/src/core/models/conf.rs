@@ -8,7 +8,7 @@ use serde_yaml::Value as YamlValue;
 const DIRECT: &str = "DIRECT";
 const CHECK_URL: &str = "https://www.gstatic.com/generate_204";
 pub const DATA_URL: &str =
-    "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/";
+    "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest";
 
 /// Mihomo configuration file
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -95,11 +95,18 @@ pub struct Dns {
 
     pub listen: String,
 
-    #[serde(rename = "proxy-server-nameserver")]
-    pub proxy_ns: Vec<String>,
+    // Used to resolve DNS server names.
     #[serde(rename = "default-nameserver")]
     pub default_ns: Vec<String>,
+    // Used to resolve domain names when using proxy.
+    #[serde(rename = "proxy-server-nameserver")]
+    pub proxy_ns: Vec<String>,
+    // Used to resolve domain names when using direct.
+    #[serde(rename = "direct-nameserver")]
+    pub direct_ns: Vec<String>,
+    // Used to resolve domain names by default.
     pub nameserver: Vec<String>,
+    // Used to resolve domain names when the above fails.
     pub fallback: Vec<String>,
 }
 
@@ -300,10 +307,10 @@ impl Default for Dns {
                 "MATCH,fake-ip".to_string(),
             ],
             default_ns: vec![
-                "8.8.8.8".to_string(),
-                "1.1.1.1".to_string(),
-                "9.9.9.9".to_string(),
                 "77.88.8.8".to_string(),
+                "1.1.1.1".to_string(),
+                "8.8.8.8".to_string(),
+                "9.9.9.9".to_string(),
             ],
             nameserver: vec![
                 "https://dns.google/dns-query".to_string(),
@@ -313,6 +320,10 @@ impl Default for Dns {
             ],
             proxy_ns: vec![
                 "https://dns.google/dns-query".to_string(),
+                "https://cloudflare-dns.com/dns-query".to_string(),
+            ],
+            direct_ns: vec![
+                "https://dns.yandex.ru/dns-query".to_string(),
                 "https://cloudflare-dns.com/dns-query".to_string(),
             ],
             fallback: vec![

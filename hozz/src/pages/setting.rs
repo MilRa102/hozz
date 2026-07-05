@@ -57,7 +57,7 @@ pub fn SettingsView() -> Element {
     rsx! {
         div { class: "flex h-full w-full bg-transparent overflow-hidden text-zinc-200 animate-fade-in",
 
-            // 👈 ЛЕВЫЙ САЙДБАР (Навигация)
+            // Navigation sidebar
             div { class: "w-56 border-r border-white/5 flex flex-col p-6 gap-6",
                 div { class: "text-lg font-semibold tracking-tight", "Настройки" }
 
@@ -72,7 +72,7 @@ pub fn SettingsView() -> Element {
                             },
                             onclick: move |_| {
                                 active_category.set(*category);
-                                search_query.set(String::new()); // Сбрасываем поиск при клике на категорию
+                                search_query.set(String::new());
                             },
                             "{category.as_str()}"
                         }
@@ -80,27 +80,26 @@ pub fn SettingsView() -> Element {
                 }
             }
 
-            // 👉 ПРАВАЯ ЧАСТЬ (Контент)
+            // Content
             div { class: "flex-1 flex flex-col h-full relative",
 
-                // Верхняя панель: Умный поиск и Быстрый доступ
+                // Top panel: Smart Search and Quick Access
                 div { class: "p-6 border-b border-white/5 flex flex-col gap-4 sticky top-0 bg-black/40 backdrop-blur-md z-10",
 
-                    // Поисковая строка
+                    // Search input
                     SearchInput {
                         class: "",
                         signal: search_query,
                         placeholder: "Поиск по ключевым словам или названиям настроек",
                     }
 
-                    // Теги быстрого доступа
+                    // Popular tags
                     div { class: "flex flex-wrap items-center gap-1",
                         span { class: "text-[10px] font-medium text-zinc-500 uppercase tracking-widest shrink-0", "Популярное" }
                         for tag in popular_tags {
                             button {
                                 class: "px-2.5 py-1 text-[11px] bg-zinc-900/50 border border-zinc-800 text-zinc-400 rounded-full hover:bg-zinc-800 hover:text-zinc-200 hover:border-zinc-700 transition-all flex items-center gap-1.5 cursor-pointer",
                                 onclick: move |_| {
-                                    // Убираем скобки и устанавливаем поиск
                                     let clean_tag = tag.replace("[", "").replace("]", "");
                                     search_query.set(clean_tag);
                                 },
@@ -111,12 +110,11 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                // Скроллящийся холст с настройками
                 div { class: "flex-1 overflow-y-auto p-8 pb-32",
                     div { class: "max-w-3xl mx-auto flex flex-col gap-6",
 
                         if !is_searching {
-                            // --- ОТОБРАЖЕНИЕ КАТЕГОРИИ ---
+                            // --- Category Display ---
                             div { class: "animate-fade-in",
                                 h3 { class: "text-[11px] font-mono uppercase tracking-widest text-zinc-500 mb-4 ml-1",
                                     "{active_category().as_str()}"
@@ -149,7 +147,6 @@ pub fn SettingsView() -> Element {
                                                             if let Err(e) = orch.set_preference(&id, &new_value).await {
                                                                 tracing::error!("Ошибка при переключении {}: {}", id, e);
                                                                 orch.warning(e.to_string());
-
                                                                 states.write().insert(id.clone(), previous_value.clone());
                                                             }
                                                         });
@@ -161,7 +158,7 @@ pub fn SettingsView() -> Element {
                                 }
                             }
                         } else {
-                            // --- ОТОБРАЖЕНИЕ ПОИСКА ---
+                            // --- Search Display ---
                             div { class: "animate-fade-in",
                                 h3 { class: "text-[11px] font-mono uppercase tracking-widest text-amber-500/80 mb-4 ml-1 flex items-center gap-2",
                                     "Результаты поиска"
@@ -195,7 +192,6 @@ pub fn SettingsView() -> Element {
                                                             if let Err(e) = orch.set_preference(&id, &new_value).await {
                                                                 tracing::error!("Ошибка при переключении {}: {}", id, e);
                                                                 orch.warning(e.to_string());
-
                                                                 states.write().insert(id.clone(), previous_value.clone());
                                                             }
                                                         });
