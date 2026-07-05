@@ -20,7 +20,6 @@ pub struct VaultDirectoryListProps {
 #[component]
 pub fn VaultDirectoryList(props: VaultDirectoryListProps) -> Element {
     rsx! {
-        // Заменили divide-gray-100 на divide-zinc-800/50
         div { class: "h-full overflow-y-auto divide-y divide-zinc-800/50",
             if props.has_cursor {
                 div {

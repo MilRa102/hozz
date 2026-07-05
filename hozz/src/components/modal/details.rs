@@ -1,6 +1,7 @@
-use crate::utils::Icon;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::md_navigation_icons::MdClose;
+
+use crate::utils::Icon;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct ModalProps {

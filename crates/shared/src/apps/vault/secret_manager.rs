@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use serde_json::{Map, Value as Json};
 use vaultrs::{
+    api::{ResponseWrapper, WrappedResponse, kv2::requests::ReadSecretRequest},
     client::{Client, VaultClient, VaultClientSettingsBuilder},
     kv2,
 };
@@ -11,20 +12,27 @@ use crate::apps::{
     vault::{SecretItem, SecretVisit, TokenInfo},
 };
 
-/// A trait defining the interface for managing secrets in a Vault system.
+pub type SecretData = Map<String, Json>;
+pub type SecretWrappedResponse = WrappedResponse<ReadSecretRequest>;
+
+/// A trait for managing secrets through Vault's KV backend.
 ///
-/// This trait provides methods to interact with Vault's KV (Key-Value) store,
-/// including retrieving sessions, listing and reading secrets, and tracking access patterns.
-/// It is implemented by the `Orchestrator` struct to provide centralized secret management.
+/// This trait provides an interface for authenticating with Vault, listing and reading secrets,
+/// inspecting metadata, wrapping and unwrapping secret payloads, and tracking frequently used
+/// paths. Implementations are expected to provide access to the underlying Vault client and the
+/// local state used for visit history.
 ///
 /// # Methods
-/// * `vault()` - Creates a new `VaultClient` configured with the current vault settings.
-/// * `session()` - Retrieves the current authentication token and session information.
-/// * `secrets()` - Lists all secrets within a specific mount point and path.
-/// * `secret()` - Reads the content of a specific secret from the KV store.
-/// * `mounts()` - Returns a list of all configured KV mount points in the Vault system.
-/// * `track_visit()` - Records an access event for a specific secret path to track usage patterns.
-/// * `frequent_visits()` - Returns a sorted list of secrets accessed most frequently.
+/// * `vault()` - Builds a `VaultClient` from the configured Vault address and token.
+/// * `session()` - Returns the current authentication token information.
+/// * `secrets()` - Lists secret paths under a mount and prefix.
+/// * `secret()` - Reads a secret value from the KV store.
+/// * `secret_meta()` - Reads metadata for a secret, such as versions and timestamps.
+/// * `secret_wrap()` - Wraps a secret read response in a single-use wrap token.
+/// * `secret_wrap_lookup()` - Looks up information for an existing wrap token.
+/// * `mounts()` - Lists available KV mount points.
+/// * `track_visit()` - Records a secret access event for usage history.
+/// * `frequent_visits()` - Returns the most frequently visited secrets.
 #[async_trait]
 pub trait SecretManager {
     /// Creates a new `VaultClient` instance configured with the current vault settings.
@@ -70,8 +78,47 @@ pub trait SecretManager {
     /// * `path` - The specific path within the mount to read.
     ///
     /// # Returns
-    /// * `Result<Map<String, Json>>` - A JSON map of key-value pairs on success, or an error if reading fails.
-    async fn secret(&self, mount: &str, path: &str) -> Result<Map<String, Json>>;
+    /// * `Result<SecretData>` - A JSON map of key-value pairs on success, or an error if reading fails.
+    async fn secret(&self, mount: &str, path: &str) -> Result<SecretData>;
+
+    /// Reads metadata for a specific secret.
+    ///
+    /// The metadata includes information such as the current version, creation time, and deletion
+    /// time when available. The provided path is normalized by trimming leading slashes before
+    /// the request is sent.
+    ///
+    /// # Arguments
+    /// * `mount` - The Vault mount point (for example, `secret`).
+    /// * `path` - The path to the secret.
+    ///
+    /// # Returns
+    /// * `Result<SecretData>` - A JSON object containing the secret metadata.
+    async fn secret_meta(&self, mount: &str, path: &str) -> Result<SecretData>;
+
+    /// Wraps a secret read response in a single-use wrap token.
+    ///
+    /// This method reads the secret at the provided mount and path and returns the Vault response
+    /// wrapper that can later be used to look up or unwrap the wrapped payload. The path is
+    /// normalized by trimming leading slashes before the request is sent.
+    ///
+    /// # Arguments
+    /// * `mount` - The Vault mount point that contains the secret.
+    /// * `path` - The path to the secret within the mount.
+    ///
+    /// # Returns
+    /// * `Result<SecretWrappedResponse>` - A wrap token response that can be inspected or unwrapped.
+    async fn secret_wrap(&self, mount: &str, path: &str)
+    -> Result<SecretWrappedResponse>;
+
+    /// Looks up information for an existing wrap token.
+    ///
+    /// This method queries Vault for the state of a previously issued wrap token without
+    /// consuming it. It is useful for inspecting the wrap token metadata or verifying that it is
+    /// still valid.
+    ///
+    /// # Arguments
+    /// * `token` - The wrap token to look up.
+    async fn secret_wrap_lookup(&self, token: &str) -> Result<()>;
 
     /// Returns a list of all configured KV mount points in the Vault system.
     ///
@@ -171,12 +218,63 @@ impl SecretManager for Orchestrator {
     /// * `path` - The specific path within the mount to read.
     ///
     /// # Returns
-    /// * `Result<Map<String, Json>>` - A JSON map of key-value pairs on success, or an error if reading fails.
-    async fn secret(&self, mount: &str, path: &str) -> Result<Map<String, Json>> {
+    /// * `Result<SecretData>` - A JSON map of key-value pairs on success, or an error if reading fails.
+    async fn secret(&self, mount: &str, path: &str) -> Result<SecretData> {
         let client = self.vault()?;
         let path = path.trim_start_matches('/');
-        let secret = kv2::read::<Map<String, Json>>(&client, mount, path).await?;
+        let secret = kv2::read::<SecretData>(&client, mount, path).await?;
         Ok(secret)
+    }
+
+    /// Reads metadata for a specific secret.
+    ///
+    /// The metadata is fetched from Vault and converted into a JSON object so it can be handled
+    /// consistently by the rest of the application. Leading slashes are trimmed from the path
+    /// before the request is issued.
+    async fn secret_meta(&self, mount: &str, path: &str) -> Result<SecretData> {
+        let client = self.vault()?;
+        let path = path.trim_start_matches('/');
+
+        let metadata = kv2::read_metadata(&client, mount, path).await?;
+        let json = serde_json::to_value(metadata)?;
+
+        if let Json::Object(map) = json {
+            Ok(map)
+        } else {
+            Err(anyhow!("Unexpected metadata format"))
+        }
+    }
+
+    /// Wraps a secret read response in a single-use wrap token.
+    ///
+    /// The request is built from the provided mount and path, and the resulting Vault wrap
+    /// response is returned so it can be inspected or unwrapped later.
+    async fn secret_wrap(
+        &self,
+        mount: &str,
+        path: &str,
+    ) -> Result<SecretWrappedResponse> {
+        let client = self.vault()?;
+        let path = path.trim_start_matches('/');
+
+        let endpoint = ReadSecretRequest::builder()
+            .mount(mount)
+            .path(path)
+            .build()
+            .map_err(|e| anyhow!("Failed to build read secret request: {}", e))?;
+
+        let wrap_response = endpoint.wrap(&client).await?;
+        Ok(wrap_response)
+    }
+
+    /// Looks up information for an existing wrap token.
+    ///
+    /// The wrap response is queried against Vault without consuming the token so callers can
+    /// inspect its metadata or verify that it is still valid.
+    async fn secret_wrap_lookup(&self, token: &str) -> Result<()> {
+        let client = self.vault()?;
+        vaultrs::sys::wrapping::lookup(&client, token).await?;
+        Ok(())
     }
 
     /// Returns a list of all configured KV mount points in the Vault system.

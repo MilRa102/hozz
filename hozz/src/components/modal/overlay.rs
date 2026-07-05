@@ -9,6 +9,7 @@ use crate::utils::Icon;
 pub fn ModalOverlay(
     title: String,
     children: Element,
+    share_button: Element,
     on_close: EventHandler<()>,
     #[props(default = String::new())] footer_text: String,
 ) -> Element {
@@ -22,10 +23,15 @@ pub fn ModalOverlay(
 
                 div { class: "px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950 shrink-0",
                     h3 { class: "text-sm font-semibold text-zinc-100", "{title}" }
-                    button {
-                        class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors",
-                        onclick: move |_| on_close.call(()),
-                        Icon { icon: MdClose, size: 18 }
+
+
+                    div {
+                        {share_button}
+                        button {
+                            class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors",
+                            onclick: move |_| on_close.call(()),
+                            Icon { icon: MdClose, size: 18 }
+                        }
                     }
                 }
 

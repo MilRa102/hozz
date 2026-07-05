@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use dioxus::prelude::*;
+use dioxus::{logger::tracing, prelude::*};
+use dioxus_free_icons::icons::ld_icons::LdShare2;
 use serde_json::{Map, Value as Json};
 use shared::apps::{
-    Orchestrator,
+    LoggingLayer, Orchestrator,
     vault::{SecretItem, SecretManager, SecretType, TokenInfo, VaultConfig},
 };
 
@@ -11,8 +12,11 @@ use super::{
     breadcrumb::VaultBreadcrumbs, dirs::VaultDirectoryList, quick::VaultQuickAccess,
     session::VaultSessionBar,
 };
-use crate::components::{
-    card::PanelCard, input::SearchInput, item::SecretEntry, modal::ModalOverlay,
+use crate::{
+    components::{
+        card::PanelCard, input::SearchInput, item::SecretEntry, modal::ModalOverlay,
+    },
+    utils::{Icon, to_clipboard},
 };
 
 #[component]
@@ -27,6 +31,7 @@ pub fn VaultExplorer(
     let mut selected_mount = use_signal(String::new);
     let mut cursor = use_signal(String::new);
     let mut active_secret = use_signal(|| None::<Map<String, Json>>);
+    let mut active_meta = use_signal(|| None::<Map<String, Json>>);
     let mut is_loading_secret = use_signal(|| false);
     let mut search_query = use_signal(String::new);
     let mut frequent_refresh = use_signal(|| 0);
@@ -101,6 +106,30 @@ pub fn VaultExplorer(
         None => (vec![], true, None),
     };
 
+    let secret_share = move || {
+        let arch = consume_context::<Arc<Orchestrator>>();
+        let mount = selected_mount();
+        let path = cursor();
+
+        spawn(async move {
+            match arch.secret_wrap(&mount, &path).await {
+                Ok(wrapped) => {
+                    let token = wrapped.info.token;
+                    match to_clipboard(&token) {
+                        Ok(_) => arch.ok("Секрет скопирован в буфер обмена."),
+                        Err(e) => {
+                            tracing::error!(error = %e, "Failed to copy secret token to clipboard")
+                        },
+                    }
+                },
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to wrap secret for sharing");
+                    arch.error("Не удалось получить токен доступа к секрету.");
+                },
+            }
+        });
+    };
+
     // --- View ---
     rsx! {
         div { class: "h-full flex flex-col p-6 gap-4",
@@ -155,9 +184,19 @@ pub fn VaultExplorer(
                                     is_loading_secret.set(true);
                                     orch.track_visit(&mount, &path);
                                     frequent_refresh.with_mut(|v| *v += 1);
-                                    if let Ok(data) = orch.secret(&mount, &path).await {
+
+                                    let secret_fut = orch.secret(&mount, &path);
+                                    let meta_fut = orch.secret_meta(&mount, &path);
+
+                                    let (secret_res, meta_res) = tokio::join!(secret_fut, meta_fut);
+
+                                    if let Ok(data) = secret_res {
                                         active_secret.set(Some(data));
                                     }
+                                    if let Ok(meta) = meta_res {
+                                        active_meta.set(Some(meta));
+                                    }
+
                                     is_loading_secret.set(false);
                                 });
                             }
@@ -172,11 +211,50 @@ pub fn VaultExplorer(
             ModalOverlay {
                 title: "Свойства секрета".to_string(),
                 footer_text: "Значения зашифрованы и изолированы текущей сессией".to_string(),
-                on_close: move |()| active_secret.set(None),
+                on_close: move |()| {
+                    active_secret.set(None);
+                    active_meta.set(None);
+                },
+                share_button: rsx! {
+                    button {
+                        class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors cursor-copy",
+                        onclick: move |_| secret_share(),
+                        title: "Поделиться секретом",
+                        Icon { icon: LdShare2, size: 14 }
+                    }
+                },
 
-                div { class: "divide-y divide-white/5",
-                    for (k, v) in data {
-                        SecretEntry { key_name: k, value: v.as_str().unwrap_or("binary data").to_string() }
+                div {
+                    if let Some(meta) = active_meta()
+                        && let Some(Json::Object(custom_meta)) = meta.get("custom_metadata")
+                        && !custom_meta.is_empty() {
+                            div { class: "text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-3", "Метаданные секрета" }
+                            div { class: "flex flex-wrap gap-2.5",
+                                for (key, val) in custom_meta.iter() {
+                                    div {
+                                        class: "flex items-stretch rounded border border-zinc-700/50 overflow-hidden text-xs font-mono max-w-full",
+
+                                        div { class: "flex items-center px-2 py-1 bg-black text-zinc-500 font-semibold shrink-0 border-r border-zinc-700/50",
+                                            "{key}"
+                                        }
+
+                                        div {
+                                            class: "flex items-center px-2 py-1 bg-zinc-800/40 text-zinc-300 truncate cursor-default hover:bg-zinc-800/60 transition-colors",
+                                            title: "{val.as_str().unwrap_or_default()}",
+                                            "{val.as_str().unwrap_or_default()}"
+                                        }
+                                    }
+                                }
+                            }
+                    }
+
+                    div { class: "divide-y divide-white/5 max-h-[55vh] overflow-y-auto pr-1 mt-5",
+                        for (key_name, v) in data {
+                            SecretEntry {
+                                key_name,
+                                value: v.as_str().unwrap_or("binary data").to_string()
+                            }
+                        }
                     }
                 }
             }
