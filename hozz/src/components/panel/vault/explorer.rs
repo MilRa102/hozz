@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dioxus::{logger::tracing, prelude::*};
-use dioxus_free_icons::icons::ld_icons::LdShare2;
+use dioxus_free_icons::icons::ld_icons::{LdLockKeyholeOpen, LdShare2};
 use serde_json::{Map, Value as Json};
 use shared::apps::{
     LoggingLayer, Orchestrator,
@@ -19,6 +19,7 @@ use crate::{
     utils::{Icon, to_clipboard},
 };
 
+/// Renders the Vault explorer panel with browsing, search, sharing, and recent access views.
 #[component]
 pub fn VaultExplorer(
     cfg: VaultConfig,
@@ -29,6 +30,7 @@ pub fn VaultExplorer(
 
     // --- State ---
     let mut selected_mount = use_signal(String::new);
+    let mut selected_secret_path = use_signal(String::new);
     let mut cursor = use_signal(String::new);
     let mut active_secret = use_signal(|| None::<Map<String, Json>>);
     let mut active_meta = use_signal(|| None::<Map<String, Json>>);
@@ -106,17 +108,19 @@ pub fn VaultExplorer(
         None => (vec![], true, None),
     };
 
-    let secret_share = move || {
+    let secret_share = move |path: String| {
         let arch = consume_context::<Arc<Orchestrator>>();
         let mount = selected_mount();
-        let path = cursor();
 
         spawn(async move {
             match arch.secret_wrap(&mount, &path).await {
                 Ok(wrapped) => {
                     let token = wrapped.info.token;
                     match to_clipboard(&token) {
-                        Ok(_) => arch.ok("Секрет скопирован в буфер обмена."),
+                        Ok(_) => {
+                            arch.ok("Секрет скопирован в буфер обмена.");
+                            selected_secret_path.set(String::new());
+                        },
                         Err(e) => {
                             tracing::error!(error = %e, "Failed to copy secret token to clipboard")
                         },
@@ -128,6 +132,44 @@ pub fn VaultExplorer(
                 },
             }
         });
+    };
+
+    let secret_unshare = move || {
+        let arch = consume_context::<Arc<Orchestrator>>();
+        let mut token_data = None::<String>;
+
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            match clipboard.get_text() {
+                Ok(text) => {
+                    arch.ok("Секрет загружен из буфера обмена.");
+                    token_data = Some(text);
+                },
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to copy secret token to clipboard");
+                },
+            }
+        }
+
+        if let Some(token) = token_data {
+            spawn(async move {
+                if let Err(e) = arch.secret_wrap_lookup(&token).await {
+                    tracing::error!(error = %e, "Failed to lookup secret token for sharing.");
+                    arch.error("Не удалось найти токен доступа к секрету.");
+                    return;
+                };
+
+                match arch.secret_unwrap(&token).await {
+                    Ok(secret) => {
+                        active_secret.set(Some(secret.data));
+                        active_meta.set(Some(secret.metadata))
+                    },
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to unwrap secret");
+                        arch.error("Не удалось разобрать секрет.");
+                    },
+                }
+            });
+        }
     };
 
     // --- View ---
@@ -156,9 +198,19 @@ pub fn VaultExplorer(
                             cursor.set(String::new());
                         }
                     }
-                    SearchInput {
-                        signal: search_query,
-                        placeholder: if selected_mount().is_empty() { "Поиск точки монтирования...".to_string() } else { "Поиск секрета...".to_string() }
+
+                    div { class: "flex items-center gap-2",
+                        button {
+                            class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors cursor-copy",
+                            onclick: move |_| secret_unshare(),
+                            title: "Получить секрет",
+                            Icon { icon: LdLockKeyholeOpen, size: 14 }
+                        }
+
+                        SearchInput {
+                            signal: search_query,
+                            placeholder: if selected_mount().is_empty() { "Поиск точки монтирования...".to_string() } else { "Поиск секрета...".to_string() }
+                        }
                     }
                 }
 
@@ -180,6 +232,7 @@ pub fn VaultExplorer(
                             } else {
                                 let mount = selected_mount().clone();
                                 let path = format!("{}/{}", cursor(), item.name);
+                                selected_secret_path.set(path.clone());
                                 spawn(async move {
                                     is_loading_secret.set(true);
                                     orch.track_visit(&mount, &path);
@@ -218,7 +271,7 @@ pub fn VaultExplorer(
                 share_button: rsx! {
                     button {
                         class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors cursor-copy",
-                        onclick: move |_| secret_share(),
+                        onclick: move |_| secret_share(selected_secret_path()),
                         title: "Поделиться секретом",
                         Icon { icon: LdShare2, size: 14 }
                     }

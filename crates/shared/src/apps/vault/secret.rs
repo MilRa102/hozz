@@ -5,40 +5,28 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Represents the type of a secret item.
-///
-/// Determines whether the secret is a folder or a key (file).
+/// Describes whether a Vault secret entry represents a folder or a single value.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SecretType {
-    /// A folder secret.
+    /// A folder entry.
     Folder,
-    /// A key (file) secret.
+    /// A secret value entry.
     Key,
 }
 
-/// Represents a single secret item in the vault.
-///
-/// Contains metadata about a secret including its name, path, and type.
+/// A single secret entry discovered under a Vault mount.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SecretItem {
-    /// The display name of the secret.
+    /// The display name of the secret entry.
     pub name: String,
-    /// The storage path of the secret.
+    /// The storage path of the entry in Vault.
     pub path: String,
-    /// The type of the secret (folder or key).
+    /// The entry type: folder or key.
     pub secret_type: SecretType,
 }
 
 impl SecretItem {
-    /// Creates a new folder secret item.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the folder.
-    ///
-    /// # Returns
-    ///
-    /// A new `SecretItem` configured as a folder.
+    /// Creates a folder item with the provided name.
     pub fn new_folder(name: String) -> Self {
         let path = name.clone();
         Self {
@@ -49,18 +37,19 @@ impl SecretItem {
     }
 }
 
+/// The payload returned by Vault when a secret is read or unwrapped.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SecretObject {
+    /// The secret data values.
+    pub data: serde_json::Map<String, serde_json::Value>,
+    /// The metadata associated with the secret.
+    pub metadata: serde_json::Map<String, serde_json::Value>,
+}
+
 impl From<String> for SecretItem {
-    /// Converts a string into a `SecretItem`.
+    /// Converts a Vault listing entry into a `SecretItem`.
     ///
-    /// Automatically determines the type based on whether the string ends with '/'.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The string representation of the secret.
-    ///
-    /// # Returns
-    ///
-    /// A new `SecretItem` with inferred type and normalized path.
+    /// The type is inferred from whether the entry ends with `/`.
     fn from(value: String) -> Self {
         let is_folder = value.ends_with('/');
         Self {
