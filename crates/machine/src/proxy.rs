@@ -6,7 +6,7 @@ impl SysProxyController {
             enable: true,
             host: "127.0.0.1".to_string(),
             port: config::CONF.mihomo.mixed_port,
-            bypass: "127.0.0.1,localhost".to_string(),
+            bypass: config::CONF.mihomo.bypass.clone(),
         };
 
         proxy.set_system_proxy().map_err(|e| {

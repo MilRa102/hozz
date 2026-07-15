@@ -14,6 +14,8 @@ pub struct MihomoConfig {
     pub retry: i8,
     #[serde(default = "default_mixed_port")]
     pub mixed_port: u16,
+    #[serde(default = "default_bypass_list")]
+    pub bypass: String,
 }
 
 impl Default for MihomoConfig {
@@ -24,6 +26,7 @@ impl Default for MihomoConfig {
             token: default_token(),
             retry: default_retry(),
             mixed_port: default_mixed_port(),
+            bypass: default_bypass_list()
         }
     }
 }
@@ -54,4 +57,8 @@ fn default_retry() -> i8 {
 
 fn default_mixed_port() -> u16 {
     7089
+}
+
+fn default_bypass_list() -> String {
+    "127.0.0.1,localhost,10.96.0.0/12,192.168.0.0/12".to_string()
 }
