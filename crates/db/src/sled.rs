@@ -98,11 +98,8 @@ pub trait SledManager<I> {
         decode(bytes)
     }
 
-    /// Retrieves all items from the Sled tree, filtering out any errors during decoding.
-    ///
-    /// This method iterates over all key-value pairs in the Sled tree, attempts to decode
-    /// each value into an instance of type `I`, and collects them into a vector. Any values
-    /// that fail to decode are filtered out.
+    /// Retrieves all items from the Sled tree, logging and skipping any entries
+    /// that fail to read or decode instead of silently discarding them.
     ///
     /// # Returns
     /// * `Result<Vec<I>>` - Success if all items are retrieved, or an error if the tree cannot be accessed.
@@ -113,12 +110,21 @@ pub trait SledManager<I> {
             + Deserialize<I, HighDeserializer<Error>>,
     {
         let tree = self.tree()?;
-        Ok(tree
-            .iter()
-            .values()
-            .filter_map(std::result::Result::ok)
-            .filter_map(|b| Self::decode(&b).ok())
-            .collect())
+        let mut items = Vec::new();
+        for entry in tree.iter().values() {
+            match entry {
+                Ok(bytes) => match Self::decode(&bytes) {
+                    Ok(item) => items.push(item),
+                    Err(error) => {
+                        tracing::warn!(tree = %Self::TREE_NAME, %error, "Failed to decode item from Sled tree");
+                    }
+                },
+                Err(error) => {
+                    tracing::warn!(tree = %Self::TREE_NAME, %error, "Failed to read entry from Sled tree");
+                }
+            }
+        }
+        Ok(items)
     }
 
     /// Saves an item to the database with the given key.
@@ -183,5 +189,152 @@ pub trait SledManager<I> {
         let tree = self.tree()?;
         tree.remove(key)?;
         Ok(())
+    }
+
+    /// Retrieves all items whose key starts with the given prefix, logging and
+    /// skipping any entries that fail to read or decode.
+    ///
+    /// Sled iterates keys in lexicographic byte order, so this is useful for
+    /// namespaced/composite keys (e.g. `"<conversation_id>:<timestamp>"`) where a
+    /// zero-padded timestamp suffix keeps results chronologically ordered without
+    /// needing to decode the whole tree.
+    ///
+    /// # Arguments
+    /// * `prefix` - The key prefix to scan for.
+    ///
+    /// # Returns
+    /// * `Result<Vec<I>>` - Success if the tree is scanned, or an error if failed.
+    fn scan_prefix(&self, prefix: &str) -> anyhow::Result<Vec<I>>
+    where
+        I: Archive,
+        I::Archived: for<'a> CheckBytes<HighValidator<'a, Error>>
+            + Deserialize<I, HighDeserializer<Error>>,
+    {
+        let tree = self.tree()?;
+        let mut items = Vec::new();
+        for entry in tree.scan_prefix(prefix.as_bytes()).values() {
+            match entry {
+                Ok(bytes) => match Self::decode(&bytes) {
+                    Ok(item) => items.push(item),
+                    Err(error) => {
+                        tracing::warn!(tree = %Self::TREE_NAME, %prefix, %error, "Failed to decode item from Sled tree");
+                    }
+                },
+                Err(error) => {
+                    tracing::warn!(tree = %Self::TREE_NAME, %prefix, %error, "Failed to read entry from Sled tree");
+                }
+            }
+        }
+        Ok(items)
+    }
+
+    /// Removes all items whose key starts with the given prefix, atomically.
+    ///
+    /// All matching removals are collected into a single `sled::Batch` and applied
+    /// in one atomic operation, so a failure or crash midway can't leave the
+    /// prefix partially deleted.
+    ///
+    /// # Arguments
+    /// * `prefix` - The key prefix to scan and delete.
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success if all matching items are removed atomically, or an error if failed.
+    fn delete_prefix(&self, prefix: &str) -> anyhow::Result<()> {
+        let tree = self.tree()?;
+        let mut batch = sled::Batch::default();
+        let mut removed = 0usize;
+        for key in tree.scan_prefix(prefix.as_bytes()).keys() {
+            match key {
+                Ok(key) => {
+                    batch.remove(key);
+                    removed += 1;
+                }
+                Err(error) => {
+                    tracing::warn!(tree = %Self::TREE_NAME, %prefix, %error, "Failed to read key while scanning prefix for deletion");
+                }
+            }
+        }
+        tree.apply_batch(batch)?;
+        tree.flush()?;
+        tracing::debug!(tree = %Self::TREE_NAME, %prefix, removed, "Deleted keys by prefix");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use rkyv::{Archive, Deserialize, Serialize};
+
+    use super::SledManager;
+
+    #[derive(Debug, Clone, PartialEq, Archive, Serialize, Deserialize)]
+    struct Item {
+        value: u32,
+    }
+
+    struct ItemStore;
+
+    impl SledManager<Item> for ItemStore {
+        const TREE_NAME: &'static str = "test_items";
+    }
+
+    static INIT: Once = Once::new();
+
+    /// Initializes a process-wide temporary Sled database for tests. Safe to call
+    /// from every test — only the first call actually opens the database.
+    fn init_db() {
+        INIT.call_once(|| {
+            let path = std::env::temp_dir().join(format!("hozz-db-tests-{}", std::process::id()));
+            crate::Database::init(path).expect("failed to init test database");
+        });
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn save_get_delete_roundtrip() {
+        init_db();
+        let store = ItemStore;
+        store.save("roundtrip", &Item { value: 1 }).unwrap();
+        assert_eq!(store.get("roundtrip").unwrap(), Some(Item { value: 1 }));
+        store.delete("roundtrip").unwrap();
+        assert_eq!(store.get("roundtrip").unwrap(), None);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn get_returns_none_for_missing_key() {
+        init_db();
+        let store = ItemStore;
+        assert_eq!(store.get("does-not-exist").unwrap(), None);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn scan_prefix_orders_by_key_and_ignores_other_prefixes() {
+        init_db();
+        let store = ItemStore;
+        store.save("scan:001", &Item { value: 1 }).unwrap();
+        store.save("scan:002", &Item { value: 2 }).unwrap();
+        store.save("other:001", &Item { value: 99 }).unwrap();
+
+        let items = store.scan_prefix("scan:").unwrap();
+        assert_eq!(items, vec![Item { value: 1 }, Item { value: 2 }]);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn delete_prefix_removes_all_matching_atomically() {
+        init_db();
+        let store = ItemStore;
+        store.save("bulk:001", &Item { value: 1 }).unwrap();
+        store.save("bulk:002", &Item { value: 2 }).unwrap();
+        store.save("bulk-keep:001", &Item { value: 3 }).unwrap();
+
+        store.delete_prefix("bulk:").unwrap();
+
+        assert!(store.scan_prefix("bulk:").unwrap().is_empty());
+        assert_eq!(store.scan_prefix("bulk-keep:").unwrap().len(), 1);
     }
 }

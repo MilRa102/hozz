@@ -7,15 +7,14 @@ publish.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+directories = { workspace = true }
+figment = { workspace = true }
 hex = { workspace = true }
+machine-uid = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 tracing = { workspace = true }
-
-figment = { version = "0.10.19", features = ["toml", "env", "yaml"] }
-machine-uid = "0.6"
-directories = "6.0"
 
 [lints]
 workspace = true

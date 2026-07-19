@@ -26,7 +26,7 @@ impl Default for MihomoConfig {
             token: default_token(),
             retry: default_retry(),
             mixed_port: default_mixed_port(),
-            bypass: default_bypass_list()
+            bypass: default_bypass_list(),
         }
     }
 }
@@ -60,5 +60,5 @@ fn default_mixed_port() -> u16 {
 }
 
 fn default_bypass_list() -> String {
-    "127.0.0.1,localhost,10.96.0.0/12,192.168.0.0/12".to_string()
+    "127.0.0.1,localhost,10.96.0.0/12,192.168.0.0/12,*.home".to_string()
 }

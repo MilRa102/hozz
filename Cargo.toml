@@ -6,7 +6,7 @@ members = [
     "crates/machine",
     "crates/telemetry",
     "crates/prefs",
-    "crates/db",
+    "crates/db", "crates/ai",
 ]
 resolver = "2"
 
@@ -17,40 +17,36 @@ authors = ["MR"]
 publish = false
 
 [workspace.dependencies]
-anyhow = "1.0.103"
-async-trait = "0.1"
-futures = "0.3"
+anyhow = "1.0.104"
+async-trait = "0.1.91"
+auto-launch = "0.6.0"
+bollard = "0.21"
+chrono = { version = "0.4.45", features = ["serde"] }
+chrono-humanize = "0.2"
+directories = "6.0"
+figment = { version = "0.10.19", features = ["toml", "env", "yaml"] }
+futures = "0.3.33"
 interprocess = "2.0"
 hex = "0.4"
+machine-uid = "0.6"
+nvml-wrapper = "0.12.1"
+reqwest = { version = "0.13.4", features = ["json", "stream"] }
+rkyv = { version = "0.8.17", features = ["bytecheck"] }
+secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.150"
 serde_yaml = "0.9"
+sled = "0.34"
 sha2 = "0.11"
+sysinfo = "0.39.6"
+sysproxy = "0.3"
+tokio = { version = "1.53.0", features = ["full", "signal"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1.44"
-
-[workspace.dependencies.rkyv]
-version = "0.8.16"
-features = ["bytecheck"]
-
-[workspace.dependencies.reqwest]
-version = "0.13.4"
-features = ["json", "stream"]
-
-[workspace.dependencies.secrecy]
-version = "0.10.3"
-features = ["serde"]
-
-[workspace.dependencies.serde]
-version = "1.0.228"
-features = ["derive"]
-
-[workspace.dependencies.tokio]
-version = "1.52.3"
-features = ["full", "signal"]
-
-[workspace.dependencies.uuid]
-version = "1.23.4"
-features = ["v4"]
-
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+vaultrs = "0.8.0"
+uuid = { version = "1.24.0", features = ["v4"] }
 
 [workspace.lints.clippy]
 missing_errors_doc = "allow"
