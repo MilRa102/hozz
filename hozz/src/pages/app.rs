@@ -1,5 +1,6 @@
 use std::{io::Read, sync::Arc, thread, time::Duration};
 
+use ai::GenerationManager;
 use dioxus::{desktop::use_window, logger::tracing, prelude::*};
 use interprocess::local_socket::traits::ListenerExt;
 use shared::apps::{
@@ -163,6 +164,8 @@ fn App() -> Element {
 
     let app_state = AppState::new(&arch);
     use_context_provider(|| app_state);
+    let generation_manager = use_hook(|| Arc::new(GenerationManager::new()));
+    use_context_provider(|| generation_manager.clone());
     app_state.bootstrap();
 
     rsx! {

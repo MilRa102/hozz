@@ -9,6 +9,7 @@ publish.workspace = true
 debug = true
 
 [dependencies]
+ai = { path = "../crates/ai" }
 machine = { path = "../crates/machine" }
 shared = { path = "../crates/shared" }
 prefs = { path = "../crates/prefs" }

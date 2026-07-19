@@ -19,6 +19,7 @@ const CATEGORIES: &[Category] = &[
     Category::System,
     Category::Network,
     Category::Modules,
+    Category::Advanced,
 ];
 
 #[component]

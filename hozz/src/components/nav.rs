@@ -9,7 +9,10 @@ use dioxus_free_icons::icons::{
 };
 use shared::apps::{
     Orchestrator, PrefsManager,
-    prefs::{ContainerCapability, ResourceCapability, VaultCapability},
+    prefs::{
+        ChatCapability, ContainerCapability, ResourceCapability,
+        VaultCapability,
+    },
 };
 
 use crate::{route::Route, utils::Icon};
@@ -49,6 +52,14 @@ pub fn Navbar() -> Element {
                     }
                     NavItem { to: Route::ProxyDashboard {}, icon: rsx!(Icon { icon: MdLanguage }), label: "Прокси", is_expanded: is_expanded() }
                     NavItem { to: Route::Home {}, icon: rsx!(Icon { icon: MdSecurity }), label: "Политики", is_expanded: is_expanded() }
+                    if is_admin || arch.preference_is_active::<ChatCapability>() {
+                        NavItem {
+                            to: Route::ChatPage {},
+                            icon: rsx!(span { class: "text-[10px] font-semibold", "AI" }),
+                            label: "Чат",
+                            is_expanded: is_expanded(),
+                        }
+                    }
 
                     // ГРУППА: ИНФРАСТРУКТУРА
                     if is_admin || arch.preference_is_active::<VaultCapability>() || arch.preference_is_active::<ContainerCapability>() {
