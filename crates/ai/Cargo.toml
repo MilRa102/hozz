@@ -9,8 +9,15 @@ publish.workspace = true
 db = { path = "../db" }
 prefs = { path = "../prefs" }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }
+rig-core = { workspace = true }
 rkyv = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
 uuid = { workspace = true }
 
 [lints]

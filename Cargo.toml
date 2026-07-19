@@ -31,6 +31,7 @@ hex = "0.4"
 machine-uid = "0.6"
 nvml-wrapper = "0.12.1"
 reqwest = { version = "0.13.4", features = ["json", "stream"] }
+rig-core = "0.40"
 rkyv = { version = "0.8.17", features = ["bytecheck"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
