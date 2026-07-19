@@ -6,6 +6,7 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
+ai = { path = "../ai" }
 config = { path = "../config" }
 db = { path = "../db" }
 machine = { path = "../machine" }
@@ -19,6 +20,7 @@ chrono-humanize = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 reqwest = { workspace = true }
+rig-core = { workspace = true }
 rkyv = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }

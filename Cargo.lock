@@ -6086,6 +6086,7 @@ dependencies = [
 name = "shared"
 version = "1.6.0"
 dependencies = [
+ "ai",
  "anyhow",
  "async-trait",
  "bollard",
@@ -6098,6 +6099,7 @@ dependencies = [
  "machine",
  "prefs",
  "reqwest 0.13.4",
+ "rig-core",
  "rkyv",
  "secrecy",
  "serde",

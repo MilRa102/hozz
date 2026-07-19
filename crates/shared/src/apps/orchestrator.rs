@@ -13,9 +13,11 @@ use crate::{
         app_store::AppStore,
         prefs::{
             AllowLanCapability, AutostartCapability, ContainerCapability,
-            FakeIpCapability, FindProcessCapability, GatewayCapability, PolicyCapability,
-            PrefsStore, ResourceCapability, SplitRouteCapability, SystemProxyCapability,
-            VaultCapability,
+            FakeIpCapability, FindProcessCapability, GatewayCapability,
+            PolicyCapability, PrefsStore, ResourceCapability, SplitRouteCapability,
+            SystemProxyCapability, VaultCapability,
+            AiCopilotKeySetting, AiGeminiKeySetting, AiModelSetting,
+            AiOllamaUrlSetting, AiProviderSetting, ChatCapability,
         },
         proxy::{ProfileStore, RuleStore},
         state::StateManager,
@@ -154,6 +156,12 @@ impl Orchestrator {
         registry.register(FindProcessCapability);
         registry.register(SystemProxyCapability);
         registry.register(SplitRouteCapability);
+        registry.register(ChatCapability);
+        registry.register(AiProviderSetting);
+        registry.register(AiModelSetting);
+        registry.register(AiGeminiKeySetting);
+        registry.register(AiCopilotKeySetting);
+        registry.register(AiOllamaUrlSetting);
 
         // Create the orchestrator instance with all initialized components.
         let orch = Arc::new(Self {
