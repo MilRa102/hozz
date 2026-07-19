@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::{
-    md_action_icons::{MdLanguage, MdLock, MdSettings},
-    md_content_icons::MdInventory,
-    md_hardware_icons::{MdMemory, MdSecurity},
-    md_navigation_icons::MdMenu,
+    md_action_icons::{MdLanguage, MdLock, MdSettings}, md_communication_icons::MdChat, md_content_icons::MdInventory, md_hardware_icons::{MdMemory, MdSecurity}, md_navigation_icons::MdMenu,
 };
 use shared::apps::{
     Orchestrator, PrefsManager,
@@ -55,7 +52,7 @@ pub fn Navbar() -> Element {
                     if is_admin || arch.preference_is_active::<ChatCapability>() {
                         NavItem {
                             to: Route::ChatPage {},
-                            icon: rsx!(span { class: "text-[10px] font-semibold", "AI" }),
+                            icon: rsx!(Icon { icon: MdChat }),
                             label: "Чат",
                             is_expanded: is_expanded(),
                         }

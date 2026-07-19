@@ -22,6 +22,7 @@ serde_json = { workspace = true }
 
 arboard = "3.4"
 base64 = "0.22"
+comrak = "0.54.0"
 image = "0.25"
 futures = "0.3"
 
@@ -31,6 +32,8 @@ dioxus-free-icons = { version = "0.10", features = [
     "lucide",
     "material-design-icons-action",
     "material-design-icons-alert",
+    "material-design-icons-av",
+    "material-design-icons-communication",
     "material-design-icons-content",
     "material-design-icons-hardware",
     "material-design-icons-navigation",

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use futures::stream::{self, BoxStream, StreamExt};
 use rig_core::client::{CompletionClient, Nothing};
 use rig_core::completion::{CompletionModel, GetTokenUsage, Message as RigMessage};
+use rig_core::completion::message::{Reasoning, ReasoningContent};
 use rig_core::providers::{copilot, gemini, ollama};
 use rig_core::streaming::{StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse};
 use rig_core::tool::ToolDyn;
@@ -18,6 +19,8 @@ use crate::model::ProviderKind;
 pub enum ChatEvent {
     /// Plain text delta.
     Delta(String),
+    /// Reasoning/thinking delta, if the provider exposes one.
+    Reasoning(String),
     /// A complete tool call requested by the model.
     ToolCallStarted {
         name: String,
@@ -100,6 +103,19 @@ where
     done: bool,
 }
 
+fn reasoning_text(reasoning: Reasoning) -> String {
+    reasoning
+        .content
+        .into_iter()
+        .filter_map(|part| match part {
+            ReasoningContent::Text { text, .. } => Some(text),
+            ReasoningContent::Summary(text) => Some(text),
+            ReasoningContent::Encrypted(_) | ReasoningContent::Redacted { .. } | _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 async fn run<M>(
     agent: rig_core::agent::Agent<M>,
     prompt: String,
@@ -141,6 +157,19 @@ where
                 Some(Ok(StreamedAssistantContent::Text(text))) => {
                     state.accumulated.push_str(&text.text);
                     return Some((ChatEvent::Delta(text.text), state));
+                }
+                Some(Ok(StreamedAssistantContent::Reasoning(reasoning))) => {
+                    let text = reasoning_text(reasoning);
+                    if text.is_empty() {
+                        continue;
+                    }
+                    return Some((ChatEvent::Reasoning(text), state));
+                }
+                Some(Ok(StreamedAssistantContent::ReasoningDelta { reasoning, .. })) => {
+                    if reasoning.is_empty() {
+                        continue;
+                    }
+                    return Some((ChatEvent::Reasoning(reasoning), state));
                 }
                 Some(Ok(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
                     let event = ChatEvent::ToolCallStarted {

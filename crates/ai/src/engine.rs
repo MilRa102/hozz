@@ -18,6 +18,7 @@ use crate::store::{ConversationStore, MessageStore};
 #[derive(Debug, Clone, Default)]
 pub struct GenerationSnapshot {
     pub text: String,
+    pub thinking: String,
     pub finished: bool,
 }
 
@@ -154,6 +155,7 @@ impl GenerationManager {
         cancelled: Arc<AtomicBool>,
     ) {
         let mut text = String::new();
+        let mut thinking = String::new();
         let mut raw = String::new();
         let mut status = MessageStatus::Complete;
 
@@ -163,6 +165,15 @@ impl GenerationManager {
                     text.push_str(&delta);
                     let _ = snapshot_tx.send(GenerationSnapshot {
                         text: text.clone(),
+                        thinking: thinking.clone(),
+                        finished: false,
+                    });
+                }
+                ChatEvent::Reasoning(delta) => {
+                    thinking.push_str(&delta);
+                    let _ = snapshot_tx.send(GenerationSnapshot {
+                        text: text.clone(),
+                        thinking: thinking.clone(),
                         finished: false,
                     });
                 }
@@ -212,6 +223,7 @@ impl GenerationManager {
 
         let _ = snapshot_tx.send(GenerationSnapshot {
             text: message.content.clone(),
+            thinking: String::new(),
             finished: true,
         });
         self.active.lock().await.remove(&conversation_id);
