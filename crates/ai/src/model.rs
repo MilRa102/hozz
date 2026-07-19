@@ -112,7 +112,11 @@ pub struct Conversation {
 }
 
 impl Conversation {
-    pub fn new(title: impl Into<String>, provider: ProviderKind, model: impl Into<String>) -> Self {
+    pub fn new(
+        title: impl Into<String>,
+        provider: ProviderKind,
+        model: impl Into<String>,
+    ) -> Self {
         let now = chrono::Utc::now().timestamp_millis();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -151,7 +155,11 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn provider_kind_display_and_from_str_roundtrip() {
-        for kind in [ProviderKind::Gemini, ProviderKind::Copilot, ProviderKind::Ollama] {
+        for kind in [
+            ProviderKind::Gemini,
+            ProviderKind::Copilot,
+            ProviderKind::Ollama,
+        ] {
             let parsed: ProviderKind = kind.to_string().parse().unwrap();
             assert_eq!(parsed, kind);
         }
@@ -161,7 +169,10 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn provider_kind_from_str_rejects_unknown_value() {
         let error = "unknown".parse::<ProviderKind>().unwrap_err();
-        assert_eq!(error.to_string(), "unknown provider kind: unknown");
+        assert_eq!(
+            error.to_string(),
+            "unknown provider kind: unknown"
+        );
     }
 
     #[test]
@@ -174,7 +185,11 @@ mod tests {
 
     #[test]
     fn conversation_new_has_no_folder_and_matching_timestamps() {
-        let conversation = Conversation::new("New chat", ProviderKind::Gemini, "gemini-2.5-flash");
+        let conversation = Conversation::new(
+            "New chat",
+            ProviderKind::Gemini,
+            "gemini-2.5-flash",
+        );
         assert!(conversation.folder_id.is_none());
         assert_eq!(conversation.created_at, conversation.updated_at);
         assert_eq!(conversation.provider, ProviderKind::Gemini);

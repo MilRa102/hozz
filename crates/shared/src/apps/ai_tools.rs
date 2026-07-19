@@ -38,10 +38,7 @@ pub struct ProxyProfileOutput {
 pub struct AiToolError(String);
 
 impl std::fmt::Display for AiToolError {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -84,10 +81,7 @@ impl Tool for ProxyStatusTool {
         })
     }
 
-    async fn call(
-        &self,
-        _args: Self::Args,
-    ) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         Ok(ProxyStatusOutput {
             connected: self.orch.is_connected(),
             active_profile: self.orch.state.active_profile_rx.borrow().clone(),
@@ -132,10 +126,7 @@ impl Tool for ProxyToggleTool {
         })
     }
 
-    async fn call(
-        &self,
-        args: Self::Args,
-    ) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         self.orch
             .toggle_connection(args.active)
             .await
@@ -175,10 +166,7 @@ impl Tool for DockerListTool {
         })
     }
 
-    async fn call(
-        &self,
-        _args: Self::Args,
-    ) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         Ok(Container::list().await)
     }
 }
@@ -205,10 +193,7 @@ impl Tool for SystemResourcesTool {
         })
     }
 
-    async fn call(
-        &self,
-        _args: Self::Args,
-    ) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         let mut monitor = machine::SystemMonitor::new();
         Ok(monitor.fetch_data())
     }
@@ -244,10 +229,7 @@ impl Tool for ProfileListTool {
         })
     }
 
-    async fn call(
-        &self,
-        _args: Self::Args,
-    ) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         let profiles = self
             .orch
             .profiles

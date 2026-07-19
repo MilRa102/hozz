@@ -38,7 +38,6 @@ dependencies = [
  "prefs",
  "rig-core",
  "rkyv",
- "serde",
  "serde_json",
  "tokio",
  "tracing",

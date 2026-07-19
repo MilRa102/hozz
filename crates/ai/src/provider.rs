@@ -1,16 +1,24 @@
 use std::sync::Arc;
 
 use futures::stream::{self, BoxStream, StreamExt};
-use rig_core::client::{CompletionClient, Nothing};
-use rig_core::completion::{CompletionModel, GetTokenUsage, Message as RigMessage};
-use rig_core::completion::message::{Reasoning, ReasoningContent};
-use rig_core::providers::{copilot, gemini, ollama};
-use rig_core::streaming::{StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse};
-use rig_core::tool::ToolDyn;
+use rig_core::{
+    client::{CompletionClient, Nothing},
+    completion::{
+        CompletionModel, GetTokenUsage, Message as RigMessage,
+        message::{Reasoning, ReasoningContent},
+    },
+    providers::{copilot, gemini, ollama},
+    streaming::{
+        StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse,
+    },
+    tool::ToolDyn,
+};
 use tokio::sync::Mutex;
 
-use crate::control::{ResponseControl, StreamControl};
-use crate::model::ProviderKind;
+use crate::{
+    control::{ResponseControl, StreamControl},
+    model::ProviderKind,
+};
 
 /// A normalized chunk of a streaming generation, provider-agnostic — this is
 /// the boundary past which none of the provider-specific response types (`R`
@@ -66,31 +74,39 @@ pub async fn start_stream(
     tools: Vec<Box<dyn ToolDyn>>,
     prompt: String,
     history: Vec<RigMessage>,
-) -> anyhow::Result<(BoxStream<'static, ChatEvent>, Arc<dyn StreamControl>)> {
+) -> anyhow::Result<(
+    BoxStream<'static, ChatEvent>,
+    Arc<dyn StreamControl>,
+)> {
     match config {
         ProviderConfig::Gemini { api_key } => {
-            let client = gemini::Client::new(api_key)
-                .map_err(|error| anyhow::anyhow!("Failed to create Gemini client: {error}"))?;
+            let client = gemini::Client::new(api_key).map_err(|error| {
+                anyhow::anyhow!("Failed to create Gemini client: {error}")
+            })?;
             let agent = client.agent(model).tools(tools).build();
             run(agent, prompt, history).await
-        }
+        },
         ProviderConfig::Copilot { api_key } => {
             let client = copilot::Client::builder()
                 .api_key(copilot::CopilotAuth::ApiKey(api_key.clone()))
                 .build()
-                .map_err(|error| anyhow::anyhow!("Failed to create Copilot client: {error}"))?;
+                .map_err(|error| {
+                    anyhow::anyhow!("Failed to create Copilot client: {error}")
+                })?;
             let agent = client.agent(model).tools(tools).build();
             run(agent, prompt, history).await
-        }
+        },
         ProviderConfig::Ollama { base_url } => {
             let client = ollama::Client::builder()
                 .api_key(Nothing)
                 .base_url(base_url)
                 .build()
-                .map_err(|error| anyhow::anyhow!("Failed to create Ollama client: {error}"))?;
+                .map_err(|error| {
+                    anyhow::anyhow!("Failed to create Ollama client: {error}")
+                })?;
             let agent = client.agent(model).tools(tools).build();
             run(agent, prompt, history).await
-        }
+        },
     }
 }
 
@@ -110,7 +126,9 @@ fn reasoning_text(reasoning: Reasoning) -> String {
         .filter_map(|part| match part {
             ReasoningContent::Text { text, .. } => Some(text),
             ReasoningContent::Summary(text) => Some(text),
-            ReasoningContent::Encrypted(_) | ReasoningContent::Redacted { .. } | _ => None,
+            ReasoningContent::Encrypted(_) | ReasoningContent::Redacted { .. } | _ => {
+                None
+            },
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -120,7 +138,10 @@ async fn run<M>(
     agent: rig_core::agent::Agent<M>,
     prompt: String,
     history: Vec<RigMessage>,
-) -> anyhow::Result<(BoxStream<'static, ChatEvent>, Arc<dyn StreamControl>)>
+) -> anyhow::Result<(
+    BoxStream<'static, ChatEvent>,
+    Arc<dyn StreamControl>,
+)>
 where
     M: CompletionModel + 'static,
     M::StreamingResponse: GetTokenUsage + Clone + Unpin + Send + 'static,
@@ -128,10 +149,14 @@ where
     let response = agent
         .stream_completion(prompt, history)
         .await
-        .map_err(|error| anyhow::anyhow!("Failed to build streaming completion request: {error}"))?
+        .map_err(|error| {
+            anyhow::anyhow!("Failed to build streaming completion request: {error}")
+        })?
         .stream()
         .await
-        .map_err(|error| anyhow::anyhow!("Failed to start streaming completion: {error}"))?;
+        .map_err(|error| {
+            anyhow::anyhow!("Failed to start streaming completion: {error}")
+        })?;
 
     let response = Arc::new(Mutex::new(response));
     let control: Arc<dyn StreamControl> = Arc::new(ResponseControl(response.clone()));
@@ -157,27 +182,29 @@ where
                 Some(Ok(StreamedAssistantContent::Text(text))) => {
                     state.accumulated.push_str(&text.text);
                     return Some((ChatEvent::Delta(text.text), state));
-                }
+                },
                 Some(Ok(StreamedAssistantContent::Reasoning(reasoning))) => {
                     let text = reasoning_text(reasoning);
                     if text.is_empty() {
                         continue;
                     }
                     return Some((ChatEvent::Reasoning(text), state));
-                }
-                Some(Ok(StreamedAssistantContent::ReasoningDelta { reasoning, .. })) => {
+                },
+                Some(Ok(StreamedAssistantContent::ReasoningDelta {
+                    reasoning, ..
+                })) => {
                     if reasoning.is_empty() {
                         continue;
                     }
                     return Some((ChatEvent::Reasoning(reasoning), state));
-                }
+                },
                 Some(Ok(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
                     let event = ChatEvent::ToolCallStarted {
                         name: tool_call.function.name,
                         arguments: tool_call.function.arguments,
                     };
                     return Some((event, state));
-                }
+                },
                 // Reasoning / tool-call-delta / final-response / unknown chunks
                 // are folded into `choice`/`response` internally by
                 // `StreamingCompletionResponse` itself; nothing to surface here.
@@ -185,7 +212,7 @@ where
                 Some(Err(error)) => {
                     state.done = true;
                     return Some((ChatEvent::Error(error.to_string()), state));
-                }
+                },
                 None => {
                     state.done = true;
                     let guard = state.response.lock().await;
@@ -197,14 +224,13 @@ where
                     let raw = serde_json::to_string(&message).unwrap_or_default();
                     let text = state.accumulated.clone();
                     return Some((ChatEvent::Done { text, raw }, state));
-                }
+                },
             }
         }
     });
 
     Ok((events.boxed(), control))
 }
-
 
 #[cfg(test)]
 mod tests {

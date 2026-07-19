@@ -12,12 +12,11 @@ use crate::{
     apps::{
         app_store::AppStore,
         prefs::{
-            AllowLanCapability, AutostartCapability, ContainerCapability,
-            FakeIpCapability, FindProcessCapability, GatewayCapability,
-            PolicyCapability, PrefsStore, ResourceCapability, SplitRouteCapability,
-            SystemProxyCapability, VaultCapability,
-            AiCopilotKeySetting, AiGeminiKeySetting, AiModelSetting,
-            AiOllamaUrlSetting, AiProviderSetting, ChatCapability,
+            AiCopilotKeySetting, AiGeminiKeySetting, AiModelSetting, AiOllamaUrlSetting,
+            AiProviderSetting, AllowLanCapability, AutostartCapability, ChatCapability,
+            ContainerCapability, FakeIpCapability, FindProcessCapability,
+            GatewayCapability, PolicyCapability, PrefsStore, ResourceCapability,
+            SplitRouteCapability, SystemProxyCapability, VaultCapability,
         },
         proxy::{ProfileStore, RuleStore},
         state::StateManager,

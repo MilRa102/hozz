@@ -23,7 +23,10 @@ impl AiPrefsReader {
     pub const KEY_OLLAMA_BASE_URL: &'static str = "ai.ollama.base_url";
 
     fn value(&self, key: &str) -> Option<String> {
-        SledManager::get(self, key).ok().flatten().map(|pref: AppPrefs| pref.value)
+        SledManager::get(self, key)
+            .ok()
+            .flatten()
+            .map(|pref: AppPrefs| pref.value)
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -33,7 +36,8 @@ impl AiPrefsReader {
     }
 
     pub fn provider(&self) -> Option<ProviderKind> {
-        self.value(Self::KEY_PROVIDER).and_then(|v| v.parse().ok())
+        self.value(Self::KEY_PROVIDER)
+            .and_then(|v| v.parse().ok())
     }
 
     pub fn model(&self) -> Option<String> {
@@ -85,12 +89,18 @@ mod tests {
     #[test]
     fn ollama_base_url_falls_back_to_default_when_unset() {
         init_db();
-        assert_eq!(AiPrefsReader.ollama_base_url(), "http://localhost:11434");
+        assert_eq!(
+            AiPrefsReader.ollama_base_url(),
+            "http://localhost:11434"
+        );
     }
 
     #[test]
     fn provider_is_none_when_key_missing() {
         init_db();
-        assert_eq!(AiPrefsReader.value("ai.unset.provider.test"), None);
+        assert_eq!(
+            AiPrefsReader.value("ai.unset.provider.test"),
+            None
+        );
     }
 }

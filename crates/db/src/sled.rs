@@ -117,11 +117,11 @@ pub trait SledManager<I> {
                     Ok(item) => items.push(item),
                     Err(error) => {
                         tracing::warn!(tree = %Self::TREE_NAME, %error, "Failed to decode item from Sled tree");
-                    }
+                    },
                 },
                 Err(error) => {
                     tracing::warn!(tree = %Self::TREE_NAME, %error, "Failed to read entry from Sled tree");
-                }
+                },
             }
         }
         Ok(items)
@@ -218,11 +218,11 @@ pub trait SledManager<I> {
                     Ok(item) => items.push(item),
                     Err(error) => {
                         tracing::warn!(tree = %Self::TREE_NAME, %prefix, %error, "Failed to decode item from Sled tree");
-                    }
+                    },
                 },
                 Err(error) => {
                     tracing::warn!(tree = %Self::TREE_NAME, %prefix, %error, "Failed to read entry from Sled tree");
-                }
+                },
             }
         }
         Ok(items)
@@ -248,10 +248,10 @@ pub trait SledManager<I> {
                 Ok(key) => {
                     batch.remove(key);
                     removed += 1;
-                }
+                },
                 Err(error) => {
                     tracing::warn!(tree = %Self::TREE_NAME, %prefix, %error, "Failed to read key while scanning prefix for deletion");
-                }
+                },
             }
         }
         tree.apply_batch(batch)?;
@@ -286,7 +286,8 @@ mod tests {
     /// from every test — only the first call actually opens the database.
     fn init_db() {
         INIT.call_once(|| {
-            let path = std::env::temp_dir().join(format!("hozz-db-tests-{}", std::process::id()));
+            let path = std::env::temp_dir()
+                .join(format!("hozz-db-tests-{}", std::process::id()));
             crate::Database::init(path).expect("failed to init test database");
         });
     }
@@ -296,8 +297,13 @@ mod tests {
     fn save_get_delete_roundtrip() {
         init_db();
         let store = ItemStore;
-        store.save("roundtrip", &Item { value: 1 }).unwrap();
-        assert_eq!(store.get("roundtrip").unwrap(), Some(Item { value: 1 }));
+        store
+            .save("roundtrip", &Item { value: 1 })
+            .unwrap();
+        assert_eq!(
+            store.get("roundtrip").unwrap(),
+            Some(Item { value: 1 })
+        );
         store.delete("roundtrip").unwrap();
         assert_eq!(store.get("roundtrip").unwrap(), None);
     }
@@ -315,9 +321,15 @@ mod tests {
     fn scan_prefix_orders_by_key_and_ignores_other_prefixes() {
         init_db();
         let store = ItemStore;
-        store.save("scan:001", &Item { value: 1 }).unwrap();
-        store.save("scan:002", &Item { value: 2 }).unwrap();
-        store.save("other:001", &Item { value: 99 }).unwrap();
+        store
+            .save("scan:001", &Item { value: 1 })
+            .unwrap();
+        store
+            .save("scan:002", &Item { value: 2 })
+            .unwrap();
+        store
+            .save("other:001", &Item { value: 99 })
+            .unwrap();
 
         let items = store.scan_prefix("scan:").unwrap();
         assert_eq!(items, vec![Item { value: 1 }, Item { value: 2 }]);
@@ -328,9 +340,15 @@ mod tests {
     fn delete_prefix_removes_all_matching_atomically() {
         init_db();
         let store = ItemStore;
-        store.save("bulk:001", &Item { value: 1 }).unwrap();
-        store.save("bulk:002", &Item { value: 2 }).unwrap();
-        store.save("bulk-keep:001", &Item { value: 3 }).unwrap();
+        store
+            .save("bulk:001", &Item { value: 1 })
+            .unwrap();
+        store
+            .save("bulk:002", &Item { value: 2 })
+            .unwrap();
+        store
+            .save("bulk-keep:001", &Item { value: 3 })
+            .unwrap();
 
         store.delete_prefix("bulk:").unwrap();
 

@@ -112,8 +112,10 @@ impl FolderStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ProviderKind, Role};
-    use crate::test_support::init_db;
+    use crate::{
+        model::{ProviderKind, Role},
+        test_support::init_db,
+    };
 
     #[test]
     #[allow(clippy::unwrap_used)]
@@ -123,7 +125,10 @@ mod tests {
         let conversation = Conversation::new("Test", ProviderKind::Ollama, "llama3");
         store.upsert(&conversation).unwrap();
 
-        assert_eq!(store.find(&conversation.id).unwrap(), Some(conversation.clone()));
+        assert_eq!(
+            store.find(&conversation.id).unwrap(),
+            Some(conversation.clone())
+        );
 
         store.remove(&conversation.id).unwrap();
         assert_eq!(store.find(&conversation.id).unwrap(), None);
@@ -137,7 +142,10 @@ mod tests {
         let folder = Folder::new("Work");
         store.upsert(&folder).unwrap();
 
-        assert_eq!(store.find(&folder.id).unwrap(), Some(folder.clone()));
+        assert_eq!(
+            store.find(&folder.id).unwrap(),
+            Some(folder.clone())
+        );
 
         store.remove(&folder.id).unwrap();
         assert_eq!(store.find(&folder.id).unwrap(), None);
@@ -147,7 +155,11 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn messages_are_listed_in_chronological_order() {
         init_db();
-        let conversation = Conversation::new("Order test", ProviderKind::Gemini, "gemini-2.5-flash");
+        let conversation = Conversation::new(
+            "Order test",
+            ProviderKind::Gemini,
+            "gemini-2.5-flash",
+        );
         ConversationStore.upsert(&conversation).unwrap();
 
         let mut first = Message::new(Role::User, "first", "{}");
@@ -156,11 +168,18 @@ mod tests {
         second.timestamp = 2_000;
 
         // Appended out of order on purpose.
-        MessageStore.append(&conversation.id, &second).unwrap();
-        MessageStore.append(&conversation.id, &first).unwrap();
+        MessageStore
+            .append(&conversation.id, &second)
+            .unwrap();
+        MessageStore
+            .append(&conversation.id, &first)
+            .unwrap();
 
         let messages = MessageStore.list(&conversation.id).unwrap();
-        let contents: Vec<&str> = messages.iter().map(|m| m.content.as_str()).collect();
+        let contents: Vec<&str> = messages
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect();
         assert_eq!(contents, vec!["first", "second"]);
     }
 
@@ -168,20 +187,41 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn deleting_conversation_removes_its_messages_only() {
         init_db();
-        let conversation = Conversation::new("Delete test", ProviderKind::Copilot, "gpt-5");
+        let conversation =
+            Conversation::new("Delete test", ProviderKind::Copilot, "gpt-5");
         let other = Conversation::new("Other", ProviderKind::Copilot, "gpt-5");
         ConversationStore.upsert(&conversation).unwrap();
         ConversationStore.upsert(&other).unwrap();
 
-        MessageStore.append(&conversation.id, &Message::new(Role::User, "hi", "{}")).unwrap();
         MessageStore
-            .append(&conversation.id, &Message::new(Role::Assistant, "hello", "{}"))
+            .append(
+                &conversation.id,
+                &Message::new(Role::User, "hi", "{}"),
+            )
             .unwrap();
-        MessageStore.append(&other.id, &Message::new(Role::User, "unrelated", "{}")).unwrap();
+        MessageStore
+            .append(
+                &conversation.id,
+                &Message::new(Role::Assistant, "hello", "{}"),
+            )
+            .unwrap();
+        MessageStore
+            .append(
+                &other.id,
+                &Message::new(Role::User, "unrelated", "{}"),
+            )
+            .unwrap();
 
-        ConversationStore.remove(&conversation.id).unwrap();
+        ConversationStore
+            .remove(&conversation.id)
+            .unwrap();
 
-        assert!(MessageStore.list(&conversation.id).unwrap().is_empty());
+        assert!(
+            MessageStore
+                .list(&conversation.id)
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(MessageStore.list(&other.id).unwrap().len(), 1);
     }
 
@@ -192,15 +232,21 @@ mod tests {
         let folder = Folder::new("Archive");
         FolderStore.upsert(&folder).unwrap();
 
-        let mut conversation = Conversation::new("In folder", ProviderKind::Gemini, "gemini-2.5-flash");
+        let mut conversation = Conversation::new(
+            "In folder",
+            ProviderKind::Gemini,
+            "gemini-2.5-flash",
+        );
         conversation.folder_id = Some(folder.id.clone());
         ConversationStore.upsert(&conversation).unwrap();
 
         FolderStore.remove(&folder.id).unwrap();
 
-        let reloaded = ConversationStore.find(&conversation.id).unwrap().unwrap();
+        let reloaded = ConversationStore
+            .find(&conversation.id)
+            .unwrap()
+            .unwrap();
         assert_eq!(reloaded.folder_id, None);
         assert!(FolderStore.find(&folder.id).unwrap().is_none());
     }
 }
-

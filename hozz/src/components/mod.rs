@@ -1,4 +1,3 @@
-pub mod message;
 pub mod button;
 pub mod card;
 pub mod control;
@@ -6,6 +5,7 @@ pub mod dropdown;
 pub mod input;
 pub mod item;
 pub mod label;
+pub mod message;
 pub mod modal;
 pub mod nav;
 pub mod panel;

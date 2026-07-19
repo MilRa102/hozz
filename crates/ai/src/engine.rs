@@ -1,17 +1,21 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
-use futures::StreamExt;
-use futures::stream::BoxStream;
-use rig_core::completion::Message as RigMessage;
-use rig_core::tool::ToolDyn;
+use futures::{StreamExt, stream::BoxStream};
+use rig_core::{completion::Message as RigMessage, tool::ToolDyn};
 use tokio::sync::{Mutex, watch};
 
-use crate::control::StreamControl;
-use crate::model::{Message, MessageStatus, Role};
-use crate::provider::{self, ChatEvent, ProviderConfig};
-use crate::store::{ConversationStore, MessageStore};
+use crate::{
+    control::StreamControl,
+    model::{Message, MessageStatus, Role},
+    provider::{self, ChatEvent, ProviderConfig},
+    store::{ConversationStore, MessageStore},
+};
 
 /// Live snapshot of an in-flight generation, published on every text delta so
 /// UI code can subscribe (see [`GenerationManager::subscribe`]) without polling.
@@ -45,12 +49,18 @@ impl GenerationManager {
     }
 
     pub async fn is_generating(&self, conversation_id: &str) -> bool {
-        self.active.lock().await.contains_key(conversation_id)
+        self.active
+            .lock()
+            .await
+            .contains_key(conversation_id)
     }
 
     /// Subscribes to live updates for a conversation's in-flight generation,
     /// if one is currently running.
-    pub async fn subscribe(&self, conversation_id: &str) -> Option<watch::Receiver<GenerationSnapshot>> {
+    pub async fn subscribe(
+        &self,
+        conversation_id: &str,
+    ) -> Option<watch::Receiver<GenerationSnapshot>> {
         self.active
             .lock()
             .await
@@ -65,7 +75,7 @@ impl GenerationManager {
             Some(generation) => {
                 generation.control.pause().await;
                 true
-            }
+            },
             None => false,
         }
     }
@@ -77,7 +87,7 @@ impl GenerationManager {
             Some(generation) => {
                 generation.control.resume().await;
                 true
-            }
+            },
             None => false,
         }
     }
@@ -91,7 +101,7 @@ impl GenerationManager {
                 generation.cancelled.store(true, Ordering::SeqCst);
                 generation.control.cancel().await;
                 true
-            }
+            },
             None => false,
         }
     }
@@ -112,20 +122,25 @@ impl GenerationManager {
         }
 
         let history = match MessageStore.list(&conversation_id) {
-            Ok(messages) => messages.iter().map(history_message).collect::<Vec<_>>(),
+            Ok(messages) => messages
+                .iter()
+                .map(history_message)
+                .collect::<Vec<_>>(),
             Err(error) => {
                 tracing::warn!(%conversation_id, %error, "Failed to load conversation history; starting with empty history");
                 Vec::new()
-            }
+            },
         };
 
-        let user_raw = serde_json::to_string(&RigMessage::user(prompt.clone())).unwrap_or_default();
+        let user_raw =
+            serde_json::to_string(&RigMessage::user(prompt.clone())).unwrap_or_default();
         let user_message = Message::new(Role::User, prompt.clone(), user_raw);
         if let Err(error) = MessageStore.append(&conversation_id, &user_message) {
             tracing::warn!(%conversation_id, %error, "Failed to persist user message");
         }
 
-        let (events, control) = provider::start_stream(&config, &model, tools, prompt, history).await?;
+        let (events, control) =
+            provider::start_stream(&config, &model, tools, prompt, history).await?;
 
         let (snapshot_tx, _snapshot_rx) = watch::channel(GenerationSnapshot::default());
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -141,7 +156,9 @@ impl GenerationManager {
 
         let manager = self.clone();
         tokio::spawn(async move {
-            manager.drive(conversation_id, events, snapshot_tx, cancelled).await;
+            manager
+                .drive(conversation_id, events, snapshot_tx, cancelled)
+                .await;
         });
 
         Ok(())
@@ -168,7 +185,7 @@ impl GenerationManager {
                         thinking: thinking.clone(),
                         finished: false,
                     });
-                }
+                },
                 ChatEvent::Reasoning(delta) => {
                     thinking.push_str(&delta);
                     let _ = snapshot_tx.send(GenerationSnapshot {
@@ -176,11 +193,14 @@ impl GenerationManager {
                         thinking: thinking.clone(),
                         finished: false,
                     });
-                }
+                },
                 ChatEvent::ToolCallStarted { name, .. } => {
                     tracing::debug!(%conversation_id, tool = %name, "Tool call started");
-                }
-                ChatEvent::Done { text: final_text, raw: final_raw } => {
+                },
+                ChatEvent::Done {
+                    text: final_text,
+                    raw: final_raw,
+                } => {
                     text = final_text;
                     raw = final_raw;
                     status = if cancelled.load(Ordering::SeqCst) {
@@ -188,16 +208,17 @@ impl GenerationManager {
                     } else {
                         MessageStatus::Complete
                     };
-                }
+                },
                 ChatEvent::Error(error) => {
                     tracing::warn!(%conversation_id, %error, "Generation failed");
                     status = MessageStatus::Error(error);
-                }
+                },
             }
         }
 
         if raw.is_empty() {
-            raw = serde_json::to_string(&RigMessage::assistant(text.clone())).unwrap_or_default();
+            raw = serde_json::to_string(&RigMessage::assistant(text.clone()))
+                .unwrap_or_default();
         }
 
         let message = Message {
@@ -214,11 +235,11 @@ impl GenerationManager {
                 if let Err(error) = ConversationStore.upsert(&conversation) {
                     tracing::warn!(%conversation_id, %error, "Failed to update conversation timestamp");
                 }
-            }
-            Ok(None) => {}
+            },
+            Ok(None) => {},
             Err(error) => {
                 tracing::warn!(%conversation_id, %error, "Failed to load conversation to update timestamp");
-            }
+            },
         }
 
         let _ = snapshot_tx.send(GenerationSnapshot {
@@ -260,7 +281,7 @@ mod tests {
             RigMessage::Assistant { content, .. } => {
                 let payload = serde_json::to_string(&content).unwrap_or_default();
                 assert!(payload.contains("from raw"));
-            }
+            },
             other => panic!("Expected assistant message, got {other:?}"),
         }
     }
@@ -274,7 +295,10 @@ mod tests {
             ..Message::new(Role::User, "ignored", "{}")
         };
 
-        assert_eq!(history_message(&msg), RigMessage::user("fallback"));
+        assert_eq!(
+            history_message(&msg),
+            RigMessage::user("fallback")
+        );
     }
 
     #[tokio::test]

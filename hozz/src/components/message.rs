@@ -292,7 +292,6 @@ fn enhance_markdown_html(html: String) -> String {
         .replace("</table>", "</table></div>")
 }
 
-
 #[component]
 pub fn MarkdownMessage(content: String) -> Element {
     let html = use_memo(move || {
@@ -305,19 +304,21 @@ pub fn MarkdownMessage(content: String) -> Element {
         options.parse.tasklist_in_table = true;
         options.render.r#unsafe = true;
 
-        let adapter = comrak::plugins::syntect::SyntectAdapter::new(Some("base16-ocean.dark"));
+        let adapter =
+            comrak::plugins::syntect::SyntectAdapter::new(Some("base16-ocean.dark"));
         let mut plugins = comrak::options::Plugins::default();
         plugins.render.codefence_syntax_highlighter = Some(&adapter);
 
-        let rendered = comrak::markdown_to_html_with_plugins(&content, &options, &plugins);
+        let rendered =
+            comrak::markdown_to_html_with_plugins(&content, &options, &plugins);
         enhance_markdown_html(rendered)
     });
 
     rsx! {
         style { "{MARKDOWN_STYLE}" }
-        div { 
+        div {
             class: "markdown-body prose prose-invert prose-sm max-w-none",
-            dangerous_inner_html: "{html}" 
+            dangerous_inner_html: "{html}"
         }
     }
 }

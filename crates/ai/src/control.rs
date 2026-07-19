@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use rig_core::completion::GetTokenUsage;
-use rig_core::streaming::StreamingCompletionResponse;
+use rig_core::{completion::GetTokenUsage, streaming::StreamingCompletionResponse};
 use tokio::sync::Mutex;
 
 /// Type-erased pause/resume/cancel control for an in-flight streaming

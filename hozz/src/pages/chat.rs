@@ -2,19 +2,23 @@ use std::sync::Arc;
 
 use ai::{
     AiPrefsReader, Conversation, ConversationStore, Folder, FolderStore,
-    GenerationManager, Message, MessageStore, ProviderConfig, ProviderKind,
-    Role,
+    GenerationManager, Message, MessageStore, ProviderConfig, ProviderKind, Role,
 };
 use dioxus::{document::eval, prelude::*};
 use dioxus_free_icons::icons::{
-    md_av_icons::{MdPause, MdPlayArrow, MdStop}, md_content_icons::{MdInventory, MdSend}, md_navigation_icons::MdMenu,
+    md_av_icons::{MdPause, MdPlayArrow, MdStop},
+    md_content_icons::{MdInventory, MdSend},
+    md_navigation_icons::MdMenu,
 };
 use shared::apps::{LoggingLayer, Orchestrator};
 
 use crate::{components::message::MarkdownMessage, utils::Icon};
 
 fn thinking_preview(input: &str) -> Option<String> {
-    let first_non_empty = input.lines().map(str::trim).find(|line| !line.is_empty())?;
+    let first_non_empty = input
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
 
     let heading = first_non_empty.trim_start_matches('#').trim();
     let bold = first_non_empty
@@ -43,13 +47,13 @@ fn thinking_preview(input: &str) -> Option<String> {
         .find(['.', '!', '?', ':', '\n'])
         .unwrap_or(normalized.len());
     let short = normalized[..end].trim();
-    let short = short.split_whitespace().take(8).collect::<Vec<_>>().join(" ");
+    let short = short
+        .split_whitespace()
+        .take(8)
+        .collect::<Vec<_>>()
+        .join(" ");
 
-    if short.is_empty() {
-        None
-    } else {
-        Some(short)
-    }
+    if short.is_empty() { None } else { Some(short) }
 }
 
 fn conversation_title_from_prompt(prompt: &str) -> String {
@@ -69,16 +73,20 @@ fn provider_config(reader: &AiPrefsReader) -> anyhow::Result<ProviderConfig> {
             let key = reader
                 .gemini_api_key()
                 .filter(|v| !v.trim().is_empty())
-                .ok_or_else(|| anyhow::anyhow!("Не указан Gemini API key в настройках"))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Не указан Gemini API key в настройках")
+                })?;
             Ok(ProviderConfig::Gemini { api_key: key })
-        }
+        },
         ProviderKind::Copilot => {
             let key = reader
                 .copilot_api_key()
                 .filter(|v| !v.trim().is_empty())
-                .ok_or_else(|| anyhow::anyhow!("Не указан Copilot API key в настройках"))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Не указан Copilot API key в настройках")
+                })?;
             Ok(ProviderConfig::Copilot { api_key: key })
-        }
+        },
         ProviderKind::Ollama => Ok(ProviderConfig::Ollama {
             base_url: reader.ollama_base_url(),
         }),
@@ -137,7 +145,7 @@ pub fn ChatPage() -> Element {
     use_effect(move || {
         let _ = messages();
         let _ = stream_text();
-        
+
         let js = r#"window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });"#;
         let _ = eval(js);
     });
@@ -162,7 +170,9 @@ pub fn ChatPage() -> Element {
         let _ = reload_tick();
 
         if let Some(conversation_id) = selected_conversation_id() {
-            let loaded = MessageStore.list(&conversation_id).unwrap_or_default();
+            let loaded = MessageStore
+                .list(&conversation_id)
+                .unwrap_or_default();
             messages.set(loaded);
         } else {
             messages.set(Vec::new());
@@ -196,7 +206,9 @@ pub fn ChatPage() -> Element {
                         }
                         let snapshot = rx.borrow().clone();
                         thinking_text.set(snapshot.thinking.clone());
-                        is_thinking.set(!snapshot.finished && !snapshot.thinking.trim().is_empty());
+                        is_thinking.set(
+                            !snapshot.finished && !snapshot.thinking.trim().is_empty(),
+                        );
                         stream_text.set(snapshot.text);
                         generation_active.set(!snapshot.finished);
                         if snapshot.finished {
@@ -250,7 +262,8 @@ pub fn ChatPage() -> Element {
         "Пишет ответ"
     };
     let activity_text = if is_thinking() {
-        thinking_preview(&thinking_text()).unwrap_or_else(|| "Формирует план ответа".to_string())
+        thinking_preview(&thinking_text())
+            .unwrap_or_else(|| "Формирует план ответа".to_string())
     } else {
         thinking_preview(&thinking_text())
             .filter(|text| !text.is_empty())
@@ -356,7 +369,7 @@ pub fn ChatPage() -> Element {
                                         }
                                     },
                                     Icon { icon: MdSend, size: 14 }
-                                    
+
                                 }
                                 button {
                                     class: "w-8 h-8 rounded hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center",
@@ -836,7 +849,11 @@ pub fn ChatPage() -> Element {
 }
 
 #[component]
-fn ThinkingBanner(status: &'static str, status_class: &'static str, text: String) -> Element {
+fn ThinkingBanner(
+    status: &'static str,
+    status_class: &'static str,
+    text: String,
+) -> Element {
     rsx! {
         div { class: "w-full rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-3 flex items-center gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)]",
             div { class: "w-4 h-4 rounded-full border-2 border-zinc-600 border-t-cyan-400 animate-spin shrink-0" }
@@ -855,16 +872,20 @@ fn MessageView(message: Message) -> Element {
     let bubble_class = match message.role {
         Role::User => "ml-auto bg-cyan-500/10 border border-cyan-500/40 text-zinc-100",
         Role::Assistant => "mr-auto text-zinc-100",
-        Role::Tool => "mr-auto bg-violet-500/5 border border-violet-500/20 text-violet-200",
-        Role::System => "mr-auto bg-amber-500/5 border border-amber-500/20 text-amber-100",
+        Role::Tool => {
+            "mr-auto bg-violet-500/5 border border-violet-500/20 text-violet-200"
+        },
+        Role::System => {
+            "mr-auto bg-amber-500/5 border border-amber-500/20 text-amber-100"
+        },
     };
 
     rsx! {
         div { class: "max-w-[85%] rounded-xl px-6 py-3 text-sm {bubble_class}",
-            div { class: "text-[10px] uppercase tracking-wider text-zinc-500 mb-2 font-semibold", 
-                "{message.role:?}" 
+            div { class: "text-[10px] uppercase tracking-wider text-zinc-500 mb-2 font-semibold",
+                "{message.role:?}"
             }
-            
+
             if message.role == Role::Tool {
                 div { class: "font-mono text-xs", "🛠 {message.content}" }
             } else {
