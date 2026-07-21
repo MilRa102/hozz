@@ -194,8 +194,17 @@ impl GenerationManager {
                         finished: false,
                     });
                 },
-                ChatEvent::ToolCallStarted { name, .. } => {
+                ChatEvent::ToolCallStarted { name, arguments } => {
                     tracing::debug!(%conversation_id, tool = %name, "Tool call started");
+                    self.persist_tool_call_started(&conversation_id, name, arguments);
+                },
+                ChatEvent::ToolResultReceived { name, payload } => {
+                    tracing::debug!(%conversation_id, tool = %name, "Tool result received");
+                    self.persist_tool_result_received(
+                        &conversation_id,
+                        name,
+                        payload,
+                    );
                 },
                 ChatEvent::Done {
                     text: final_text,
@@ -229,18 +238,11 @@ impl GenerationManager {
         if let Err(error) = MessageStore.append(&conversation_id, &message) {
             tracing::warn!(%conversation_id, %error, "Failed to persist assistant message");
         }
-        match ConversationStore.find(&conversation_id) {
-            Ok(Some(mut conversation)) => {
-                conversation.updated_at = message.timestamp;
-                if let Err(error) = ConversationStore.upsert(&conversation) {
-                    tracing::warn!(%conversation_id, %error, "Failed to update conversation timestamp");
-                }
-            },
-            Ok(None) => {},
-            Err(error) => {
-                tracing::warn!(%conversation_id, %error, "Failed to load conversation to update timestamp");
-            },
-        }
+        self.touch_conversation_timestamp(
+            &conversation_id,
+            message.timestamp,
+            "assistant message",
+        );
 
         let _ = snapshot_tx.send(GenerationSnapshot {
             text: message.content.clone(),
@@ -248,6 +250,88 @@ impl GenerationManager {
             finished: true,
         });
         self.active.lock().await.remove(&conversation_id);
+    }
+
+    fn persist_tool_call_started(
+        &self,
+        conversation_id: &str,
+        name: String,
+        arguments: serde_json::Value,
+    ) {
+        let tool_payload = serde_json::json!({
+            "name": name,
+            "arguments": arguments,
+        });
+        let event_payload = serde_json::json!({
+            "event": "tool_call_started",
+            "tool": tool_payload,
+        });
+
+        let content = serde_json::to_string(&event_payload["tool"])
+            .unwrap_or_else(|_| "Инструмент".to_string());
+        let raw = serde_json::to_string(&event_payload).unwrap_or_default();
+
+        let tool_message = Message::new(Role::Tool, content, raw);
+        if let Err(error) = MessageStore.append(conversation_id, &tool_message) {
+            tracing::warn!(%conversation_id, %error, "Failed to persist tool message");
+        }
+
+        self.touch_conversation_timestamp(
+            conversation_id,
+            tool_message.timestamp,
+            "tool message",
+        );
+    }
+
+    fn persist_tool_result_received(
+        &self,
+        conversation_id: &str,
+        name: String,
+        payload: serde_json::Value,
+    ) {
+        let tool_payload = serde_json::json!({
+            "name": name,
+            "result": payload,
+        });
+        let event_payload = serde_json::json!({
+            "event": "tool_result_received",
+            "tool": tool_payload,
+        });
+
+        let content = serde_json::to_string(&event_payload["tool"])
+            .unwrap_or_else(|_| "Инструмент".to_string());
+        let raw = serde_json::to_string(&event_payload).unwrap_or_default();
+
+        let tool_message = Message::new(Role::Tool, content, raw);
+        if let Err(error) = MessageStore.append(conversation_id, &tool_message) {
+            tracing::warn!(%conversation_id, %error, "Failed to persist tool result message");
+        }
+
+        self.touch_conversation_timestamp(
+            conversation_id,
+            tool_message.timestamp,
+            "tool result",
+        );
+    }
+
+    fn touch_conversation_timestamp(
+        &self,
+        conversation_id: &str,
+        timestamp: i64,
+        source: &str,
+    ) {
+        match ConversationStore.find(conversation_id) {
+            Ok(Some(mut conversation)) => {
+                conversation.updated_at = timestamp;
+                if let Err(error) = ConversationStore.upsert(&conversation) {
+                    tracing::warn!(%conversation_id, %error, "Failed to update conversation timestamp for {source}");
+                }
+            },
+            Ok(None) => {},
+            Err(error) => {
+                tracing::warn!(%conversation_id, %error, "Failed to load conversation to update timestamp for {source}");
+            },
+        }
     }
 }
 

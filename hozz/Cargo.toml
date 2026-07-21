@@ -28,14 +28,17 @@ futures = "0.3"
 
 dioxus = { version = "0.7.9", features = ["router"] }
 dioxus-free-icons = { version = "0.10", features = [
+    "codicons",
     "ionicons",
     "lucide",
+    "hero-icons-outline",
     "material-design-icons-action",
     "material-design-icons-alert",
     "material-design-icons-av",
     "material-design-icons-communication",
     "material-design-icons-content",
     "material-design-icons-hardware",
+    "material-design-icons-file",
     "material-design-icons-navigation",
     "material-design-icons-notification",
 ] }

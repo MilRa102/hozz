@@ -1,18 +1,188 @@
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use ai::{
     AiPrefsReader, Conversation, ConversationStore, Folder, FolderStore,
     GenerationManager, Message, MessageStore, ProviderConfig, ProviderKind, Role,
 };
-use dioxus::{document::eval, prelude::*};
+use dioxus::{document::eval, logger::tracing, prelude::*};
 use dioxus_free_icons::icons::{
-    md_av_icons::{MdPause, MdPlayArrow, MdStop},
-    md_content_icons::{MdInventory, MdSend},
-    md_navigation_icons::MdMenu,
+    hi_outline_icons::{HiChat, HiFolder, HiFolderAdd, HiFolderRemove}, io_icons::IoArrowBack, ld_icons::LdList, md_av_icons::{MdPause, MdPlayArrow, MdStop}, md_communication_icons::MdChatBubble, md_content_icons::MdSend, md_file_icons::MdCreateNewFolder,
 };
 use shared::apps::{LoggingLayer, Orchestrator};
 
 use crate::{components::message::MarkdownMessage, utils::Icon};
+
+fn truncate_text(input: String, max: usize) -> String {
+    if input.chars().count() <= max {
+        return input;
+    }
+
+    let short = input.chars().take(max).collect::<String>();
+    format!("{short}...")
+}
+
+fn value_to_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(v) => v.to_string(),
+        serde_json::Value::Number(v) => v.to_string(),
+        serde_json::Value::String(v) => v.clone(),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            serde_json::to_string(value).unwrap_or_default()
+        },
+    }
+}
+
+fn flatten_tool_details(
+    prefix: &str,
+    value: &serde_json::Value,
+    output: &mut Vec<(String, String)>,
+) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                let next = if prefix.is_empty() {
+                    key.to_string()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                flatten_tool_details(&next, child, output);
+            }
+        },
+        serde_json::Value::Array(values) => {
+            for (idx, child) in values.iter().enumerate() {
+                let next = if prefix.is_empty() {
+                    format!("[{idx}]")
+                } else {
+                    format!("{prefix}[{idx}]")
+                };
+                flatten_tool_details(&next, child, output);
+            }
+        },
+        _ => {
+            if prefix.is_empty() {
+                return;
+            }
+            let text = truncate_text(value_to_text(value), 120);
+            output.push((prefix.to_string(), text));
+        },
+    }
+}
+
+fn find_tool_name(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in ["name", "tool", "tool_name"] {
+                if let Some(serde_json::Value::String(name)) = map.get(key) {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+
+            if let Some(function) = map.get("function")
+                && let Some(name) = find_tool_name(function)
+            {
+                return Some(name);
+            }
+            if let Some(call) = map.get("tool_call")
+                && let Some(name) = find_tool_name(call)
+            {
+                return Some(name);
+            }
+
+            for child in map.values() {
+                if let Some(name) = find_tool_name(child) {
+                    return Some(name);
+                }
+            }
+
+            None
+        },
+        serde_json::Value::Array(values) => {
+            for child in values {
+                if let Some(name) = find_tool_name(child) {
+                    return Some(name);
+                }
+            }
+            None
+        },
+        _ => None,
+    }
+}
+
+fn parse_content_pairs(content: &str) -> Vec<(String, String)> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+
+            let (key, value) = trimmed.split_once(':')?;
+            let key = key.trim();
+            let value = value.trim();
+            if key.is_empty() || value.is_empty() {
+                return None;
+            }
+
+            Some((key.to_string(), truncate_text(value.to_string(), 120)))
+        })
+        .collect()
+}
+
+fn tool_display_data(message: &Message) -> (String, String, Vec<(String, String)>) {
+    let mut name: Option<String> = None;
+    let mut details = Vec::<(String, String)>::new();
+    let mut event_kind = "call".to_string();
+
+    if let Ok(raw_json) = serde_json::from_str::<serde_json::Value>(&message.raw) {
+        if name.is_none() {
+            name = find_tool_name(&raw_json);
+        }
+        if let Some(event) = raw_json.get("event")
+            && event == "tool_result_received"
+        {
+            event_kind = "result".to_string();
+        }
+        flatten_tool_details("raw", &raw_json, &mut details);
+    }
+
+    if let Ok(content_json) = serde_json::from_str::<serde_json::Value>(&message.content)
+    {
+        if name.is_none() {
+            name = find_tool_name(&content_json);
+        }
+        flatten_tool_details("content", &content_json, &mut details);
+    } else {
+        details.extend(parse_content_pairs(&message.content));
+    }
+
+    if name.is_none() {
+        name = message
+            .content
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(|line| {
+                line.split([':', '(', '{'])
+                    .next()
+                    .unwrap_or(line)
+                    .trim()
+                    .to_string()
+            })
+            .filter(|line| !line.is_empty());
+    }
+
+    let mut dedup = BTreeSet::new();
+    details.retain(|(key, value)| dedup.insert((key.clone(), value.clone())));
+    details.truncate(24);
+
+    let tool_name = name.unwrap_or_else(|| "Инструмент".to_string());
+    (tool_name, event_kind, details)
+}
 
 fn thinking_preview(input: &str) -> Option<String> {
     let first_non_empty = input
@@ -151,6 +321,22 @@ pub fn ChatPage() -> Element {
     });
 
     use_effect(move || {
+        let _ = input();
+
+        let js = r#"(() => {
+            const el = document.getElementById('chat-input-textarea');
+            if (!el) return;
+            const minHeight = 52;
+            const maxHeight = 156;
+            el.style.height = 'auto';
+            const nextHeight = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+            el.style.height = `${nextHeight}px`;
+            el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+        })();"#;
+        let _ = eval(js);
+    });
+
+    use_effect(move || {
         let _ = reload_tick();
 
         let mut list = ConversationStore.list().unwrap_or_default();
@@ -255,41 +441,55 @@ pub fn ChatPage() -> Element {
         .map(|c| c.title.clone())
         .unwrap_or_else(|| "Выберите диалог".to_string());
 
-    let show_activity_banner = generation_active() && !generation_paused();
-    let activity_status = if is_thinking() {
-        "Думает"
+    let input_status = if generation_active() {
+        if generation_paused() {
+            "Пауза"
+        } else if is_thinking() {
+            "Размышляет"
+        } else {
+            "Формирует ответ"
+        }
+    } else if input().trim().is_empty() {
+        "Ожидает отправки"
     } else {
-        "Пишет ответ"
+        "Готово к отправке"
     };
-    let activity_text = if is_thinking() {
-        thinking_preview(&thinking_text())
-            .unwrap_or_else(|| "Формирует план ответа".to_string())
+    let input_status_text = if generation_active() {
+        if generation_paused() {
+            "Генерация приостановлена. Нажмите кнопку воспроизведения для продолжения."
+                .to_string()
+        } else if is_thinking() {
+            thinking_preview(&thinking_text())
+                .unwrap_or_else(|| "Модель анализирует вопрос и собирает план ответа".to_string())
+        } else {
+            thinking_preview(&thinking_text())
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| "Модель оформляет финальный ответ".to_string())
+        }
+    } else if input().trim().is_empty() {
+        "Введите сообщение в поле ниже".to_string()
     } else {
-        thinking_preview(&thinking_text())
-            .filter(|text| !text.is_empty())
-            .unwrap_or_else(|| "Формулирует итоговый ответ".to_string())
+        "Нажмите Enter или кнопку отправки".to_string()
     };
-    let activity_banner_class = if show_activity_banner {
-        "max-h-24 opacity-100 translate-y-0 mb-2"
+    let input_status_class = if generation_active() {
+        if generation_paused() {
+            "text-amber-300 bg-amber-400/10 border-amber-400/20"
+        } else if is_thinking() {
+            "text-cyan-300 bg-cyan-400/10 border-cyan-400/20"
+        } else {
+            "text-emerald-300 bg-emerald-400/10 border-emerald-400/20"
+        }
+    } else if input().trim().is_empty() {
+        "text-zinc-300 bg-zinc-700/40 border-zinc-500/30"
     } else {
-        "max-h-0 opacity-0 -translate-y-1 mb-0 pointer-events-none"
-    };
-    let activity_status_class = if is_thinking() {
         "text-cyan-300 bg-cyan-400/10 border-cyan-400/20"
-    } else {
-        "text-emerald-300 bg-emerald-400/10 border-emerald-400/20"
     };
+    let input_status_running = generation_active() && !generation_paused();
 
     let input_box_class = if generation_active() {
-        "w-full min-h-[88px] resize-y bg-black border border-emerald-400/80 rounded-md px-3 py-2 text-sm shadow-[0_0_0_1px_rgba(52,211,153,0.35),0_0_18px_rgba(16,185,129,0.22)] animate-pulse"
+        "w-full min-h-[52px] max-h-[156px] resize-none overflow-y-hidden bg-zinc-950/80 rounded-xl px-3 py-2 text-sm leading-6 shadow-[0_0_0_1px_rgba(52,211,153,0.22),0_0_16px_rgba(16,185,129,0.2)]"
     } else {
-        "w-full min-h-[88px] resize-y bg-black border border-white/10 rounded-md px-3 py-2 text-sm"
-    };
-
-    let chevron_class = if create_menu_open() {
-        "transform rotate-90 transition-transform duration-200"
-    } else {
-        "transform rotate-0 transition-transform duration-200"
+        "w-full min-h-[52px] max-h-[156px] resize-none overflow-y-hidden bg-zinc-950/80 rounded-xl px-3 py-2 text-sm leading-6"
     };
 
     rsx! {
@@ -300,9 +500,11 @@ pub fn ChatPage() -> Element {
                 create_menu_open.set(false);
             },
 
-            div { class: "w-[272px] border-r border-white/10 flex flex-col",
-                div { class: "p-3 border-b border-white/10 flex flex-col gap-2",
-                    div { class: "relative",
+            // Sidebar
+            div { class: "w-56 border-r border-white/10 flex flex-col",
+                // Sidebar header
+                div { class: "p-2 flex flex-col gap-2",
+                    div { class: "relative flex flex-row justify-between items-center",
                         div { class: "h-8 inline-flex items-center rounded-md border border-white/10 bg-zinc-900/70 overflow-hidden",
                             button {
                                 class: "w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer",
@@ -312,7 +514,7 @@ pub fn ChatPage() -> Element {
                                     move |evt| {
                                         evt.stop_propagation();
                                         let reader = AiPrefsReader;
-                                        let provider = reader.provider().unwrap_or(ProviderKind::Gemini);
+                                        let provider = reader.provider().unwrap_or(ProviderKind::Ollama);
                                         let model = model_for_provider(&reader, provider);
                                         let mut conversation = Conversation::new("Новый диалог", provider, model);
                                         if let Some(folder_id) = active_folder_id() {
@@ -328,7 +530,7 @@ pub fn ChatPage() -> Element {
                                         reload_tick.set(reload_tick() + 1);
                                     }
                                 },
-                                Icon { icon: MdSend, size: 14, color: "#e4e4e7" }
+                                Icon { icon: HiChat, size: 14, color: "#e4e4e7" }
                             }
                             button {
                                 class: "w-8 h-8 border-l border-white/10 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer",
@@ -337,29 +539,27 @@ pub fn ChatPage() -> Element {
                                     evt.stop_propagation();
                                     create_menu_open.set(!create_menu_open());
                                 },
-                                Icon { icon: MdMenu, size: 14, class: chevron_class }
+                                Icon { icon: LdList, size: 14 }
                             }
                         }
-
                         if create_menu_open() {
                             div {
-                                class: "absolute z-20 top-10 left-0 rounded-md border border-white/10 bg-zinc-950/98 shadow-xl p-1 flex items-center gap-1",
+                                class: "absolute z-20 top-10 left-0 rounded-md border border-white/10 bg-zinc-950/98 shadow-xl flex flex-col items-start",
                                 onclick: move |evt| evt.stop_propagation(),
                                 button {
-                                    class: "w-8 h-8 rounded hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center",
+                                    class: "w-full px-3 py-1.5 rounded hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between gap-2 text-sm",
                                     title: "Новый диалог",
                                     onclick: {
-                                        let orch = orch.clone();
                                         move |_| {
                                             let reader = AiPrefsReader;
-                                            let provider = reader.provider().unwrap_or(ProviderKind::Gemini);
+                                            let provider = reader.provider().unwrap_or(ProviderKind::Ollama);
                                             let model = model_for_provider(&reader, provider);
                                             let mut conversation = Conversation::new("Новый диалог", provider, model);
                                             if let Some(folder_id) = active_folder_id() {
                                                 conversation.folder_id = Some(folder_id);
                                             }
-                                            if let Err(error) = ConversationStore.upsert(&conversation) {
-                                                orch.error(format!("Не удалось создать диалог: {error}"));
+                                            if let Err(e) = ConversationStore.upsert(&conversation) {
+                                                tracing::error!(error = %e, "Failed to create conversation");
                                                 return;
                                             }
                                             selected_conversation_id.set(Some(conversation.id));
@@ -368,42 +568,43 @@ pub fn ChatPage() -> Element {
                                             reload_tick.set(reload_tick() + 1);
                                         }
                                     },
-                                    Icon { icon: MdSend, size: 14 }
-
+                                    Icon { icon: HiChat, size: 14 }
+                                    "Новый диалог"
                                 }
                                 button {
-                                    class: "w-8 h-8 rounded hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center",
+                                    class: "w-full px-3 py-1.5 rounded hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between gap-2 text-sm",
                                     title: "Новая папка",
                                     onclick: move |_| {
                                         creating_folder.set(true);
                                         create_menu_open.set(false);
                                     },
-                                    Icon { icon: MdInventory, size: 14 }
+                                    Icon { icon: HiFolderAdd, size: 14 }
+                                    "Новая папка"
                                 }
                             }
                         }
+                        span { class: "pr-2 font-semibold text-lg", "Диалоги" }
                     }
 
                     if creating_folder() {
-                        div { class: "flex gap-1",
+                        div { class: "flex justify-stretch gap-1",
                             input {
-                                class: "flex-1 h-8 bg-black border border-white/10 rounded px-2 text-xs",
+                                class: "flex h-8 bg-black border border-white/10 rounded px-1 text-xs",
                                 placeholder: "Имя папки",
                                 value: "{new_folder_name}",
                                 oninput: move |e| new_folder_name.set(e.value())
                             }
                             button {
-                                class: "h-8 px-3 rounded bg-white/10 text-xs hover:bg-white/15 transition-colors cursor-pointer",
+                                class: "px-1 rounded hover:bg-white/15 transition-colors cursor-pointer",
                                 onclick: {
-                                    let orch = orch.clone();
                                     move |_| {
                                         let name = new_folder_name().trim().to_string();
                                         if name.is_empty() {
                                             return;
                                         }
                                         let folder = Folder::new(name);
-                                        if let Err(error) = FolderStore.upsert(&folder) {
-                                            orch.error(format!("Не удалось создать папку: {error}"));
+                                        if let Err(e) = FolderStore.upsert(&folder) {
+                                            tracing::error!(error = %e, "Failed to create folder");
                                             return;
                                         }
                                         creating_folder.set(false);
@@ -411,17 +612,19 @@ pub fn ChatPage() -> Element {
                                         reload_tick.set(reload_tick() + 1);
                                     }
                                 },
-                                "Создать"
+                                Icon { icon: MdCreateNewFolder }
                             }
                         }
                     }
                 }
 
-                div { class: "flex-1 overflow-y-auto p-3",
-                    div { class: "space-y-1.5",
+                // Sidebar content
+                div { class: "flex-1 overflow-y-auto",
+                    // Folders list
+                    div { class: "space-y-1.5 p-3",
                         for folder in folders_list.iter() {
                             div {
-                                class: "relative rounded-md border px-2 py-1.5 flex items-center gap-2 {row_class(active_folder.as_deref() == Some(folder.id.as_str()))}",
+                                class: "relative rounded-md border px-2 py-1.5 flex items-center {row_class(active_folder.as_deref() == Some(folder.id.as_str()))}",
                                 oncontextmenu: {
                                     let folder_id = folder.id.clone();
                                     move |evt| {
@@ -430,8 +633,8 @@ pub fn ChatPage() -> Element {
                                         context_menu.set(Some(ContextMenuTarget::Folder(folder_id.clone())));
                                     }
                                 },
-                                button {
-                                    class: "flex-1 text-left min-w-0",
+                                button { 
+                                    class: "flex-1 text-left min-w-0 cursor-pointer",
                                     onclick: {
                                         let folder_id = folder.id.clone();
                                         move |_| {
@@ -439,21 +642,23 @@ pub fn ChatPage() -> Element {
                                             selected_conversation_id.set(None);
                                         }
                                     },
-                                    div { class: "text-xs text-zinc-100 truncate", "{folder.name}" }
+                                    div { class: "flex flex-row items-center gap-5 text-sm text-zinc-100 truncate px-2 py-1.5", 
+                                        Icon { icon: HiFolder }
+                                        "{folder.name}" 
+                                    }
                                 }
 
                                 if context_menu().as_ref() == Some(&ContextMenuTarget::Folder(folder.id.clone())) {
                                     div {
-                                        class: "absolute top-8 right-1 z-20 min-w-[132px] border border-white/10 bg-zinc-950 rounded-md p-1 shadow-xl",
+                                        class: "absolute top-10 right-0 z-20 min-w-[132px] border border-white/10 bg-zinc-950 rounded-md shadow-xl",
                                         button {
-                                            class: "w-full text-left px-2 py-1.5 rounded text-xs text-pink-300 hover:text-pink-200 hover:bg-pink-500/10 transition-colors cursor-pointer",
+                                            class: "flex flex-row items-center gap-2 w-full text-left px-2 py-1.5 rounded text-xs text-pink-300 hover:text-pink-200 hover:bg-pink-500/10 transition-colors cursor-pointer",
                                             onclick: {
                                                 let folder_id = folder.id.clone();
-                                                let orch = orch.clone();
                                                 move |evt| {
                                                     evt.stop_propagation();
-                                                    if let Err(error) = FolderStore.remove(&folder_id) {
-                                                        orch.error(format!("Не удалось удалить папку: {error}"));
+                                                    if let Err(e) = FolderStore.remove(&folder_id) {
+                                                        tracing::error!(error = %e, "Failed to delete folder");
                                                         return;
                                                     }
                                                     if active_folder_id().as_deref() == Some(folder_id.as_str()) {
@@ -463,6 +668,7 @@ pub fn ChatPage() -> Element {
                                                     reload_tick.set(reload_tick() + 1);
                                                 }
                                             },
+                                            Icon { icon: HiFolderRemove, size: 14 }
                                             "Удалить папку"
                                         }
                                     }
@@ -471,12 +677,8 @@ pub fn ChatPage() -> Element {
                         }
                     }
 
-                    div { class: "my-3 h-px bg-white/10" }
-
-                    div { class: "space-y-1.5",
-                        if chats_for_view.is_empty() {
-                            div { class: "px-2 py-1.5 text-xs text-zinc-600", "Диалогов нет" }
-                        }
+                    // Conversations list
+                    div { class: "space-y-1.5 p-3",
                         for conversation in chats_for_view.iter() {
                             div {
                                 class: "relative rounded-md border px-2 py-1.5 {row_class(selected_conversation_id().as_deref() == Some(conversation.id.as_str()))}",
@@ -490,28 +692,29 @@ pub fn ChatPage() -> Element {
                                 },
                                 div { class: "flex items-start gap-2",
                                     button {
-                                        class: "flex-1 text-left min-w-0",
+                                        class: "flex-1 text-left min-w-0 cursor-pointer",
                                         onclick: {
                                             let id = conversation.id.clone();
                                             move |_| selected_conversation_id.set(Some(id.clone()))
                                         },
-                                        div { class: "text-xs text-zinc-100 truncate", "{conversation.title}" }
-                                        div { class: "text-[10px] text-zinc-500 truncate", "{conversation.model}" }
+                                        div { class: "flex flex-row items-center gap-2 py-1.5 text-xs text-zinc-100 truncate", 
+                                            Icon { icon: MdChatBubble, size: 15 }
+                                            "{conversation.title}" 
+                                        }
                                     }
                                 }
 
                                 if context_menu().as_ref() == Some(&ContextMenuTarget::Conversation(conversation.id.clone())) {
                                     div {
-                                        class: "absolute top-8 right-1 z-20 min-w-[138px] border border-white/10 bg-zinc-950 rounded-md p-1 shadow-xl",
+                                        class: "absolute top-8 right-0 z-20 min-w-[138px] border border-white/10 bg-zinc-950 rounded-md shadow-xl",
                                         button {
-                                            class: "w-full text-left px-2 py-1.5 rounded text-xs text-pink-300 hover:text-pink-200 hover:bg-pink-500/10 transition-colors cursor-pointer",
+                                            class: "flex flex-row items-center gap-2 w-full text-left px-2 py-1.5 rounded text-xs text-pink-300 hover:text-pink-200 hover:bg-pink-500/10 transition-colors cursor-pointer",
                                             onclick: {
                                                 let id = conversation.id.clone();
-                                                let orch = orch.clone();
                                                 move |evt| {
                                                     evt.stop_propagation();
-                                                    if let Err(error) = ConversationStore.remove(&id) {
-                                                        orch.error(format!("Не удалось удалить диалог: {error}"));
+                                                    if let Err(e) = ConversationStore.remove(&id) {
+                                                        tracing::error!(error = %e, "Failed to delete dialog");
                                                         return;
                                                     }
                                                     if selected_conversation_id().as_deref() == Some(id.as_str()) {
@@ -521,6 +724,7 @@ pub fn ChatPage() -> Element {
                                                     reload_tick.set(reload_tick() + 1);
                                                 }
                                             },
+                                            Icon { icon: MdChatBubble, size: 14 }
                                             "Удалить диалог"
                                         }
                                     }
@@ -530,19 +734,23 @@ pub fn ChatPage() -> Element {
                     }
                 }
 
+                // Sidebar footer
                 if active_folder.is_some() {
-                    div { class: "p-3 border-t border-white/10",
+                    div { class: "p-2 border-t border-white/10",
                         button {
-                            class: "w-full h-8 rounded-md border border-white/10 text-xs hover:bg-white/5 transition-colors cursor-pointer",
+                            class: "w-full flex flex-row items-center gap-4 px-4 h-8 rounded-md text-lg hover:bg-white/5 transition-colors cursor-pointer",
                             onclick: move |_| active_folder_id.set(None),
+                            Icon { icon: IoArrowBack }
                             "Назад"
                         }
                     }
                 }
             }
 
+            // Chat area
             div { class: "flex-1 flex flex-col min-w-0",
-                div { class: "h-12 px-4 border-b border-white/10 flex items-center",
+                // Chat header
+                div { class: "h-12 px-4 flex items-center",
                     div { class: "flex-1" }
                     div { class: "text-sm text-zinc-300 text-center truncate max-w-[70%]", "{title}" }
                     div { class: "flex-1 flex justify-end",
@@ -552,6 +760,7 @@ pub fn ChatPage() -> Element {
                     }
                 }
 
+                // Chat messages area
                 div { class: "flex-1 overflow-y-auto p-5 space-y-3",
                     if messages().is_empty() && stream_text().is_empty() {
                         div { class: "text-sm text-zinc-500", "Пока нет сообщений" }
@@ -561,34 +770,52 @@ pub fn ChatPage() -> Element {
                         MessageView { message: message.clone() }
                     }
 
-                    if generation_active() && !stream_text().is_empty() {
-                        div { class: "max-w-[85%] mr-auto rounded-xl px-4 py-3 text-sm bg-zinc-900 border border-emerald-500/30 text-zinc-100",
-                            MarkdownMessage { content: stream_text() }
+                    if generation_active() {
+                        div { class: "max-w-[85%] mr-auto rounded-xl border border-cyan-500/20 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]",
+                            div { class: "mb-2 text-[10px] uppercase tracking-wider text-cyan-400 font-semibold", "Ассистент" }
+                            div { class: "prose prose-invert prose-sm max-w-none",
+                                MarkdownMessage { content: if stream_text().is_empty() { "…".to_string() } else { stream_text() } }
+                            }
                         }
                     }
                 }
 
-                div { class: "border-t border-white/10 p-3 flex flex-col gap-2",
-                    div { class: "overflow-hidden transition-all duration-200 ease-out {activity_banner_class}",
+                // Chat input area
+                div { class: "p-3",
+                    div { class: "rounded-2xl border border-white/10 bg-zinc-900/55 p-3 flex flex-col gap-3 shadow-[0_16px_32px_rgba(0,0,0,0.25)]",
                         ThinkingBanner {
-                            status: activity_status,
-                            status_class: activity_status_class,
-                            text: activity_text,
+                            status: input_status,
+                            status_class: input_status_class,
+                            text: input_status_text,
+                            running: input_status_running,
                         }
-                    }
 
-                    textarea {
-                        class: "{input_box_class}",
-                        placeholder: "Напишите сообщение...",
-                        value: "{input}",
-                        oninput: move |e| input.set(e.value()),
-                        onkeydown: {
+                        textarea {
+                            id: "chat-input-textarea",
+                            class: "{input_box_class}",
+                            style: "height: 52px;",
+                            placeholder: "Напишите сообщение...",
+                            rows: "2",
+                            value: "{input}",
+                            oninput: move |e| input.set(e.value()),
+                            onkeydown: {
                             let orch = orch.clone();
                             let manager = manager.clone();
                             move |evt| {
                                 let key = evt.key().to_string();
+                                let modifiers = evt.data().modifiers();
+                                let shift_pressed = modifiers.contains(dioxus::html::Modifiers::SHIFT);
+                                let ctrl_pressed = modifiers.contains(dioxus::html::Modifiers::CONTROL)
+                                    || modifiers.contains(dioxus::html::Modifiers::META);
 
-                                if key == "Enter" && !generation_active() {
+                                if key == "Enter" && !generation_active() && (shift_pressed || ctrl_pressed) {
+                                    evt.prevent_default();
+                                    let current = input();
+                                    input.set(format!("{current}\n"));
+                                    return;
+                                }
+
+                                if key == "Enter" && !generation_active() && !shift_pressed && !ctrl_pressed {
                                     evt.prevent_default();
                                     let prompt = input().trim().to_string();
                                     if prompt.is_empty() {
@@ -612,8 +839,8 @@ pub fn ChatPage() -> Element {
                                         let reader = AiPrefsReader;
                                         let provider_cfg = match provider_config(&reader) {
                                             Ok(cfg) => cfg,
-                                            Err(error) => {
-                                                orch_for_task.error(error.to_string());
+                                            Err(e) => {
+                                                tracing::error!(error = %e, "Failed to get provider config");
                                                 return;
                                             }
                                         };
@@ -630,15 +857,16 @@ pub fn ChatPage() -> Element {
                                             );
                                             conversation.folder_id = active_folder;
                                             let id = conversation.id.clone();
-                                            if let Err(error) = ConversationStore.upsert(&conversation) {
-                                                orch_for_task.error(format!("Не удалось создать диалог: {error}"));
+                                            if let Err(e) = ConversationStore.upsert(&conversation) {
+                                                tracing::error!(error = %e, "Failed to create conversation");
+                                                orch_for_task.error(format!("Не удалось создать диалог: {e}"));
                                                 return;
                                             }
                                             selected_conversation_id.set(Some(id.clone()));
                                             id
                                         };
 
-                                        if let Err(error) = manager
+                                        if let Err(e) = manager
                                             .start(
                                                 conversation_id,
                                                 provider_cfg,
@@ -648,7 +876,8 @@ pub fn ChatPage() -> Element {
                                             )
                                             .await
                                         {
-                                            orch_for_task.error(format!("Не удалось запустить генерацию: {error}"));
+                                            tracing::error!(error = %e, "Failed to start generation");
+                                            orch_for_task.error(format!("Не удалось запустить генерацию: {e}"));
                                             return;
                                         }
 
@@ -701,144 +930,145 @@ pub fn ChatPage() -> Element {
                                     }
                                 }
                             }
-                        }
-                    }
-
-                    div { class: "flex items-center justify-end gap-1.5",
-                        button {
-                            class: "h-8 w-8 rounded-md bg-white/10 hover:bg-white/15 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center",
-                            disabled: !generation_active(),
-                            title: if generation_paused() { "Возобновить" } else { "Пауза" },
-                            onclick: {
-                                let manager = manager.clone();
-                                move |_| {
-                                    if let Some(id) = selected_conversation_id() {
-                                        let manager = manager.clone();
-                                        let mut generation_paused = generation_paused;
-                                        spawn(async move {
-                                            if generation_paused() {
-                                                let _ = manager.resume(&id).await;
-                                                generation_paused.set(false);
-                                            } else {
-                                                let _ = manager.pause(&id).await;
-                                                generation_paused.set(true);
-                                            }
-                                        });
-                                    }
-                                }
-                            },
-                            if generation_paused() {
-                                Icon { icon: MdPlayArrow, size: 16 }
-                            } else {
-                                Icon { icon: MdPause, size: 16 }
                             }
                         }
 
-                        if generation_active() {
+                        div { class: "flex items-center justify-end gap-1.5",
                             button {
-                                class: "h-8 w-8 rounded-md bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors cursor-pointer flex items-center justify-center",
-                                title: "Остановить",
+                                class: "h-8 w-8 rounded-md bg-white/10 hover:bg-white/15 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center",
+                                disabled: !generation_active(),
+                                title: if generation_paused() { "Возобновить" } else { "Пауза" },
                                 onclick: {
                                     let manager = manager.clone();
                                     move |_| {
                                         if let Some(id) = selected_conversation_id() {
                                             let manager = manager.clone();
-                                            let mut generation_active = generation_active;
                                             let mut generation_paused = generation_paused;
-                                            let mut reload_tick = reload_tick;
                                             spawn(async move {
-                                                let _ = manager.stop(&id).await;
-                                                generation_paused.set(false);
-                                                generation_active.set(false);
-                                                reload_tick.set(reload_tick() + 1);
+                                                if generation_paused() {
+                                                    let _ = manager.resume(&id).await;
+                                                    generation_paused.set(false);
+                                                } else {
+                                                    let _ = manager.pause(&id).await;
+                                                    generation_paused.set(true);
+                                                }
                                             });
                                         }
                                     }
                                 },
-                                Icon { icon: MdStop, size: 16, color: "#fca5a5" }
+                                if generation_paused() {
+                                    Icon { icon: MdPlayArrow, size: 16 }
+                                } else {
+                                    Icon { icon: MdPause, size: 16 }
+                                }
                             }
-                        } else {
-                            button {
-                                class: "h-8 w-8 rounded-md bg-zinc-100 text-zinc-900 hover:bg-white transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center",
-                                disabled: input().trim().is_empty(),
-                                title: "Отправить",
-                                onclick: {
-                                    let orch = orch.clone();
-                                    let manager = manager.clone();
-                                    move |_| {
-                                        let prompt = input().trim().to_string();
-                                        if prompt.is_empty() {
-                                            return;
-                                        }
 
+                            if generation_active() {
+                                button {
+                                    class: "h-8 w-8 rounded-md bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors cursor-pointer flex items-center justify-center",
+                                    title: "Остановить",
+                                    onclick: {
                                         let manager = manager.clone();
-                                        let selected = selected_conversation_id();
-                                        let mut selected_conversation_id = selected_conversation_id;
-                                        let mut generation_active = generation_active;
-                                        let mut generation_paused = generation_paused;
-                                        let mut is_thinking = is_thinking;
-                                        let mut thinking_text = thinking_text;
-                                        let mut input = input;
-                                        let mut reload_tick = reload_tick;
-                                        let mut stream_text = stream_text;
-                                        let orch_for_task = orch.clone();
-                                        let active_folder = active_folder_id();
-
-                                        spawn(async move {
-                                            let reader = AiPrefsReader;
-                                            let provider_cfg = match provider_config(&reader) {
-                                                Ok(cfg) => cfg,
-                                                Err(error) => {
-                                                    orch_for_task.error(error.to_string());
-                                                    return;
-                                                }
-                                            };
-
-                                            let model = model_for_provider(&reader, provider_cfg.kind());
-
-                                            let conversation_id = if let Some(id) = selected {
-                                                id
-                                            } else {
-                                                let mut conversation = Conversation::new(
-                                                    conversation_title_from_prompt(&prompt),
-                                                    provider_cfg.kind(),
-                                                    model.clone(),
-                                                );
-                                                conversation.folder_id = active_folder;
-                                                let id = conversation.id.clone();
-                                                if let Err(error) = ConversationStore.upsert(&conversation) {
-                                                    orch_for_task.error(format!("Не удалось создать диалог: {error}"));
-                                                    return;
-                                                }
-                                                selected_conversation_id.set(Some(id.clone()));
-                                                id
-                                            };
-
-                                            if let Err(error) = manager
-                                                .start(
-                                                    conversation_id,
-                                                    provider_cfg,
-                                                    model,
-                                                    orch_for_task.ai_tools(),
-                                                    prompt,
-                                                )
-                                                .await
-                                            {
-                                                orch_for_task.error(format!("Не удалось запустить генерацию: {error}"));
+                                        move |_| {
+                                            if let Some(id) = selected_conversation_id() {
+                                                let manager = manager.clone();
+                                                let mut generation_active = generation_active;
+                                                let mut generation_paused = generation_paused;
+                                                let mut reload_tick = reload_tick;
+                                                spawn(async move {
+                                                    let _ = manager.stop(&id).await;
+                                                    generation_paused.set(false);
+                                                    generation_active.set(false);
+                                                    reload_tick.set(reload_tick() + 1);
+                                                });
+                                            }
+                                        }
+                                    },
+                                    Icon { icon: MdStop, size: 16, color: "#fca5a5" }
+                                }
+                            } else {
+                                button {
+                                    class: "h-8 w-8 rounded-md bg-zinc-100 text-zinc-900 hover:bg-white transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center",
+                                    disabled: input().trim().is_empty(),
+                                    title: "Отправить",
+                                    onclick: {
+                                        let orch = orch.clone();
+                                        let manager = manager.clone();
+                                        move |_| {
+                                            let prompt = input().trim().to_string();
+                                            if prompt.is_empty() {
                                                 return;
                                             }
 
-                                            input.set(String::new());
-                                            stream_text.set(String::new());
-                                            thinking_text.set(String::new());
-                                            is_thinking.set(false);
-                                            generation_paused.set(false);
-                                            generation_active.set(true);
-                                            reload_tick.set(reload_tick() + 1);
-                                        });
-                                    }
-                                },
-                                Icon { icon: MdSend, size: 16, color: "#111827" }
+                                            let manager = manager.clone();
+                                            let selected = selected_conversation_id();
+                                            let mut selected_conversation_id = selected_conversation_id;
+                                            let mut generation_active = generation_active;
+                                            let mut generation_paused = generation_paused;
+                                            let mut is_thinking = is_thinking;
+                                            let mut thinking_text = thinking_text;
+                                            let mut input = input;
+                                            let mut reload_tick = reload_tick;
+                                            let mut stream_text = stream_text;
+                                            let orch_for_task = orch.clone();
+                                            let active_folder = active_folder_id();
+
+                                            spawn(async move {
+                                                let reader = AiPrefsReader;
+                                                let provider_cfg = match provider_config(&reader) {
+                                                    Ok(cfg) => cfg,
+                                                    Err(e) => {
+                                                        tracing::error!(error = %e, "Failed to get provider config");
+                                                        return;
+                                                    }
+                                                };
+
+                                                let model = model_for_provider(&reader, provider_cfg.kind());
+
+                                                let conversation_id = if let Some(id) = selected {
+                                                    id
+                                                } else {
+                                                    let mut conversation = Conversation::new(
+                                                        conversation_title_from_prompt(&prompt),
+                                                        provider_cfg.kind(),
+                                                        model.clone(),
+                                                    );
+                                                    conversation.folder_id = active_folder;
+                                                    let id = conversation.id.clone();
+                                                    if let Err(e) = ConversationStore.upsert(&conversation) {
+                                                        tracing::error!(error = %e, "Failed to create conversation");
+                                                        return;
+                                                    }
+                                                    selected_conversation_id.set(Some(id.clone()));
+                                                    id
+                                                };
+
+                                                if let Err(e) = manager
+                                                    .start(
+                                                        conversation_id,
+                                                        provider_cfg,
+                                                        model,
+                                                        orch_for_task.ai_tools(),
+                                                        prompt,
+                                                    )
+                                                    .await
+                                                {
+                                                    tracing::error!(error = %e, "Failed to start generation");
+                                                    return;
+                                                }
+
+                                                input.set(String::new());
+                                                stream_text.set(String::new());
+                                                thinking_text.set(String::new());
+                                                is_thinking.set(false);
+                                                generation_paused.set(false);
+                                                generation_active.set(true);
+                                                reload_tick.set(reload_tick() + 1);
+                                            });
+                                        }
+                                    },
+                                    Icon { icon: MdSend, size: 16, color: "#111827" }
+                                }
                             }
                         }
                     }
@@ -853,10 +1083,15 @@ fn ThinkingBanner(
     status: &'static str,
     status_class: &'static str,
     text: String,
+    running: bool,
 ) -> Element {
     rsx! {
-        div { class: "w-full rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-3 flex items-center gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.18)]",
-            div { class: "w-4 h-4 rounded-full border-2 border-zinc-600 border-t-cyan-400 animate-spin shrink-0" }
+        div { class: "w-full rounded-xl bg-zinc-900/80 px-3 py-2 flex items-center gap-3",
+            if running {
+                div { class: "w-4 h-4 rounded-full border-2 border-zinc-600 border-t-cyan-400 animate-spin shrink-0" }
+            } else {
+                div { class: "w-2.5 h-2.5 rounded-full bg-zinc-500 shrink-0" }
+            }
             div { class: "min-w-0 flex-1 flex items-center gap-3",
                 div { class: "shrink-0 px-2 py-1 rounded-full border text-[10px] font-semibold uppercase tracking-[0.12em] {status_class}",
                     "{status}"
@@ -880,16 +1115,70 @@ fn MessageView(message: Message) -> Element {
         },
     };
 
+    let reader = AiPrefsReader;
+    let provider = reader.provider().unwrap_or(ProviderKind::Ollama);
+    let model_name = model_for_provider(&reader, provider);
+
     rsx! {
         div { class: "max-w-[85%] rounded-xl px-6 py-3 text-sm {bubble_class}",
-            div { class: "text-[10px] uppercase tracking-wider text-zinc-500 mb-2 font-semibold",
-                "{message.role:?}"
+            if message.role == Role::User {
+                div { class: "text-[10px] uppercase tracking-wider text-cyan-400 mb-2 font-semibold", "Вы" }
+            } else if message.role == Role::Assistant {
+                div { class: "text-[10px] uppercase tracking-wider text-zinc-500 mb-2 font-semibold", "Ассистент / {model_name}" }
+            } else if message.role == Role::System {
+                div { class: "text-[10px] uppercase tracking-wider text-amber-400 mb-2 font-semibold", "Система / {model_name}" }
+            } else if message.role == Role::Tool {
+                div { class: "text-[10px] uppercase tracking-wider text-violet-400 mb-2 font-semibold", "Инструмент / {model_name}" }
             }
 
             if message.role == Role::Tool {
-                div { class: "font-mono text-xs", "🛠 {message.content}" }
+                ToolMessageContent { message: message.clone() }
             } else {
                 MarkdownMessage { content: message.content.clone() }
+            }
+        }
+    }
+}
+
+#[component]
+fn ToolMessageContent(message: Message) -> Element {
+    let (tool_name, event_kind, details) = tool_display_data(&message);
+    let has_details = !details.is_empty();
+
+    let badge_class = if event_kind == "result" {
+        "bg-fuchsia-500/15 border border-fuchsia-400/30 text-fuchsia-200"
+    } else {
+        "bg-sky-500/10 border border-sky-400/25 text-sky-200"
+    };
+    let badge_label = if event_kind == "result" {
+        "результат"
+    } else {
+        "вызов"
+    };
+
+    rsx! {
+        div { class: "relative group",
+            div { class: "inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 {badge_class}",
+                span { class: "text-sm", if event_kind == "result" { "◉" } else { "⚙" } }
+                span { class: "font-mono text-[11px] uppercase tracking-[0.16em]", "{badge_label}" }
+                span { class: "font-mono text-xs text-zinc-100", "{tool_name}" }
+            }
+
+            if has_details {
+                div { class: "pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 hidden min-w-[300px] max-w-[520px] group-hover:block",
+                    div { class: "rounded-xl border border-violet-400/30 bg-zinc-950/95 px-2 py-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)]",
+                        table { class: "w-full text-xs border-separate border-spacing-y-1",
+                            tbody {
+                                for (key, value) in details.iter() {
+                                    tr {
+                                        td { class: "align-top pr-3 text-violet-300/90 font-mono whitespace-nowrap", "{key}" }
+                                        td { class: "align-top text-zinc-200 break-all", "{value}" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

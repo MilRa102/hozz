@@ -34,6 +34,12 @@ pub enum ChatEvent {
         name: String,
         arguments: serde_json::Value,
     },
+    /// Tool/hosted-tool result or provider-native tool payload surfaced
+    /// through unknown stream chunks.
+    ToolResultReceived {
+        name: String,
+        payload: serde_json::Value,
+    },
     /// The stream ended (naturally or via `StreamControl::cancel`). Carries the
     /// full accumulated text and a JSON-serialized `rig_core` assistant
     /// message (see `Message.raw`) for rehydrating exact multi-turn context.
@@ -134,6 +140,133 @@ fn reasoning_text(reasoning: Reasoning) -> String {
         .join(" ")
 }
 
+fn extract_text_from_value(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        },
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(extract_text_from_value)
+            .collect::<Vec<_>>()
+            .join(" ")
+            .into(),
+        serde_json::Value::Object(map) => {
+            for key in [
+                "text",
+                "delta",
+                "content",
+                "value",
+                "output",
+                "output_text",
+                "message",
+                "answer",
+                "response",
+            ] {
+                if let Some(child) = map.get(key)
+                    && let Some(text) = extract_text_from_value(child)
+                {
+                    return Some(text);
+                }
+            }
+
+            for child in map.values() {
+                if let Some(text) = extract_text_from_value(child) {
+                    return Some(text);
+                }
+            }
+
+            None
+        },
+        _ => None,
+    }
+}
+
+fn tool_name_from_value(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in ["name", "tool_name", "tool"] {
+                if let Some(serde_json::Value::String(name)) = map.get(key) {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+
+            for key in ["function", "tool_call", "tool_result"] {
+                if let Some(child) = map.get(key)
+                    && let Some(name) = tool_name_from_value(child)
+                {
+                    return Some(name);
+                }
+            }
+
+            for child in map.values() {
+                if let Some(name) = tool_name_from_value(child) {
+                    return Some(name);
+                }
+            }
+
+            None
+        },
+        serde_json::Value::Array(values) => {
+            for child in values {
+                if let Some(name) = tool_name_from_value(child) {
+                    return Some(name);
+                }
+            }
+            None
+        },
+        _ => None,
+    }
+}
+
+fn event_from_unknown_chunk(value: serde_json::Value) -> Option<ChatEvent> {
+    let serde_json::Value::Object(map) = &value else {
+        return None;
+    };
+
+    let chunk_type = map
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let looks_tool_payload = chunk_type.contains("tool")
+        || chunk_type.ends_with("_call")
+        || chunk_type.ends_with("_result")
+        || map.contains_key("tool")
+        || map.contains_key("tool_name")
+        || map.contains_key("tool_result")
+        || map.contains_key("call_id")
+        || map.contains_key("arguments")
+        || map.contains_key("output")
+        || map.contains_key("result");
+
+    if !looks_tool_payload {
+        return None;
+    }
+
+    let name = tool_name_from_value(&value)
+        .or_else(|| {
+            if chunk_type.is_empty() {
+                None
+            } else {
+                Some(chunk_type.to_string())
+            }
+        })
+        .unwrap_or_else(|| "tool_result".to_string());
+
+    Some(ChatEvent::ToolResultReceived {
+        name,
+        payload: value,
+    })
+}
+
 async fn run<M>(
     agent: rig_core::agent::Agent<M>,
     prompt: String,
@@ -204,6 +337,16 @@ where
                         arguments: tool_call.function.arguments,
                     };
                     return Some((event, state));
+                },
+                Some(Ok(StreamedAssistantContent::Unknown(value))) => {
+                    if let Some(text) = extract_text_from_value(&value) {
+                        state.accumulated.push_str(&text);
+                        return Some((ChatEvent::Delta(text), state));
+                    }
+                    if let Some(event) = event_from_unknown_chunk(value) {
+                        return Some((event, state));
+                    }
+                    continue;
                 },
                 // Reasoning / tool-call-delta / final-response / unknown chunks
                 // are folded into `choice`/`response` internally by
