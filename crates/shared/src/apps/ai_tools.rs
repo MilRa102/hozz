@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use db::SledManager;
-use rig_core::tool::{Tool, ToolDyn};
+use rig::tool::{Tool, ToolDyn};
 use serde::{Deserialize, Serialize};
 
 use crate::apps::{

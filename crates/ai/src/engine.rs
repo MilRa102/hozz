@@ -4,7 +4,7 @@ use std::{
 };
 
 use futures::StreamExt;
-use rig_core::{completion::Message as RigMessage, tool::ToolDyn};
+use rig::{completion::Message as RigMessage};
 use tokio::sync::{broadcast, Mutex, watch};
 
 use crate::{
@@ -149,7 +149,6 @@ impl GenerationManager {
             let stream_result = provider::start_stream(
                 &request.config,
                 &request.model,
-                request.tools,
                 request.system_prompt,
                 history,
             ).await;
@@ -270,7 +269,6 @@ pub struct GenerationRequest {
     pub config: ProviderConfig,
     pub model: String,
     pub system_prompt: String,
-    pub tools: Vec<Box<dyn ToolDyn>>,
 }
 
 /// Rehydrates a persisted [`Message`] back into a `rig_core` message for

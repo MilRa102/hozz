@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rig_core::{completion::GetTokenUsage, streaming::StreamingCompletionResponse};
+use rig::{completion::GetTokenUsage, streaming::StreamingCompletionResponse};
 use strum::{Display, EnumString};
 use tokio::sync::Mutex;
 

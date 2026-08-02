@@ -628,7 +628,6 @@ pub fn ChatPage() -> Element {
             config: config_cl,
             model: model_cl,
             system_prompt: sys_prompt_cl,
-            tools: vec![],
         };
         let mounted_for_spawn = mounted_for_send.clone();
         spawn(async move {

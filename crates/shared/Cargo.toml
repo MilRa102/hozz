@@ -20,7 +20,7 @@ chrono-humanize = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 reqwest = { workspace = true }
-rig-core = { workspace = true }
+rig = { workspace = true }
 rkyv = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }

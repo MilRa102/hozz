@@ -1,17 +1,13 @@
 use std::sync::Arc;
 
 use futures::stream::{self, BoxStream, StreamExt};
-use rig_core::{
-    client::{CompletionClient, Nothing},
-    completion::{
+use rig::{
+    client::{CompletionClient, Nothing}, completion::{
         CompletionModel, GetTokenUsage, Message as RigMessage,
-        message::{Reasoning, ReasoningContent},
+        message::{Reasoning, ReasoningContent}, 
+    }, providers::{copilot, gemini, ollama}, streaming::{
+        StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse
     },
-    providers::{copilot, gemini, ollama},
-    streaming::{
-        StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse,
-    },
-    tool::ToolDyn,
 };
 use tokio::sync::Mutex;
 
@@ -78,7 +74,6 @@ impl ProviderConfig {
 pub async fn start_stream(
     config: &ProviderConfig,
     model: &str,
-    tools: Vec<Box<dyn ToolDyn>>,
     prompt: String,
     history: Vec<RigMessage>,
 ) -> anyhow::Result<(
@@ -90,7 +85,7 @@ pub async fn start_stream(
             let client = gemini::Client::new(api_key).map_err(|error| {
                 anyhow::anyhow!("Failed to create Gemini client: {error}")
             })?;
-            let agent = client.agent(model).tools(tools).build();
+            let agent = client.agent(model).build();
             run(agent, prompt, history).await
         },
         ProviderConfig::Copilot { api_key } => {
@@ -100,7 +95,7 @@ pub async fn start_stream(
                 .map_err(|error| {
                     anyhow::anyhow!("Failed to create Copilot client: {error}")
                 })?;
-            let agent = client.agent(model).tools(tools).build();
+            let agent = client.agent(model).build();
             run(agent, prompt, history).await
         },
         ProviderConfig::Ollama { base_url } => {
@@ -111,7 +106,7 @@ pub async fn start_stream(
                 .map_err(|error| {
                     anyhow::anyhow!("Failed to create Ollama client: {error}")
                 })?;
-            let agent = client.agent(model).tools(tools).build();
+            let agent = client.agent(model).build();
             run(agent, prompt, history).await
         },
     }
@@ -269,7 +264,7 @@ fn event_from_unknown_chunk(value: serde_json::Value) -> Option<ChatEvent> {
 }
 
 async fn run<M>(
-    agent: rig_core::agent::Agent<M>,
+    agent: rig::agent::Agent<M>,
     prompt: String,
     history: Vec<RigMessage>,
 ) -> anyhow::Result<(

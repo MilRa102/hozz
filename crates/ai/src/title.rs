@@ -1,9 +1,7 @@
 use futures::StreamExt;
 
 use crate::{
-    model::Role,
     provider::{self, ProviderConfig},
-    store::{ConversationStore, MessageStore},
 };
 
 pub fn normalize_title(raw: &str) -> String {
@@ -32,7 +30,7 @@ pub fn normalize_title(raw: &str) -> String {
     let mut cleaned = sanitized.to_string();
     if cleaned.len() > 48 {
         cleaned.truncate(48);
-        while !cleaned.is_empty() && cleaned.chars().last().unwrap().is_whitespace() {
+        while !cleaned.is_empty() && cleaned.chars().last().expect("checked is_empty").is_whitespace() {
             cleaned.pop();
         }
     }
@@ -50,7 +48,6 @@ pub async fn generate_title(config: &ProviderConfig, model: &str, prompt: &str) 
     let stream_result = provider::start_stream(
         config,
         model,
-        vec![],
         instruction,
         history,
     )
@@ -79,35 +76,6 @@ pub async fn generate_title(config: &ProviderConfig, model: &str, prompt: &str) 
     }
 
     Ok(normalized)
-}
-
-pub fn maybe_generate_title_for_first_message(
-    conversation_id: &str,
-    prompt: &str,
-    config: &ProviderConfig,
-    model: &str,
-    conversation_store: &ConversationStore,
-    message_store: &MessageStore,
-) -> anyhow::Result<()> {
-    let conversation = conversation_store
-        .find(conversation_id)?
-        .ok_or_else(|| anyhow::anyhow!("conversation missing"))?;
-    if conversation.title != "Новый чат" {
-        return Ok(());
-    }
-
-    let messages = message_store.list(conversation_id)?;
-    let is_first_message = messages.iter().filter(|msg| msg.role == Role::User).count() == 1
-        && messages.iter().any(|msg| msg.role == Role::User && msg.content == prompt);
-
-    if !is_first_message {
-        return Ok(());
-    }
-
-    let mut updated = conversation;
-    updated.title = "...".to_string();
-    conversation_store.upsert(&updated)?;
-    Ok(())
 }
 
 #[cfg(test)]
