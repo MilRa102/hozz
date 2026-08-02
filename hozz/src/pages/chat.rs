@@ -16,12 +16,9 @@ use ai::{
     GenerationManager, Message, MessageStore, ProviderConfig, ProviderKind, Role,
 };
 use dioxus::{document::eval, logger::tracing};
-use dioxus_free_icons::icons::{
-    hi_outline_icons::HiChat,
-};
 use shared::apps::{LoggingLayer, Orchestrator};
 
-use crate::{components::message::MarkdownMessage, utils::Icon};
+use crate::{components::message::MarkdownMessage};
 
 #[derive(Clone, Copy, strum_macros::Display, strum_macros::EnumIter, PartialEq)]
 enum MenuOperation {
