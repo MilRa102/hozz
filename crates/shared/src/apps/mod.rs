@@ -1,4 +1,3 @@
-mod ai_tools;
 mod alert;
 mod app_store;
 pub mod docker;

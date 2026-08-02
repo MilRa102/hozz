@@ -3,6 +3,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use rig::tool::server::ToolServerHandle;
+
 use config::CONF;
 use db::Database;
 use prefs::SettingsRegistry;
@@ -84,6 +86,9 @@ pub struct Orchestrator {
 
     /// A settings registry that exposes capabilities as feature flags.
     pub registry: SettingsRegistry<Arc<Orchestrator>>,
+
+    /// Shared Rig tool registry used by AI integrations.
+    pub(crate) ai_tool_server: std::sync::OnceLock<ToolServerHandle>,
 }
 
 impl Orchestrator {
@@ -174,6 +179,7 @@ impl Orchestrator {
             prefs: PrefsStore,
             state,
             registry,
+            ai_tool_server: std::sync::OnceLock::new(),
         });
 
         // Set the singleton instance in the static ORCH variable.

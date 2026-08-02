@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod apps;
 pub mod core;
 pub mod utils;
