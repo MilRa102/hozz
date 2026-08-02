@@ -44,6 +44,26 @@ impl AiPrefsReader {
         self.value(Self::KEY_MODEL)
     }
 
+    pub fn effective_provider(&self, fallback: ProviderKind) -> ProviderKind {
+        self.provider().unwrap_or(fallback)
+    }
+
+    pub fn effective_model(
+        &self,
+        provider: ProviderKind,
+        fallback_model: Option<&str>,
+    ) -> String {
+        self.model().unwrap_or_else(|| {
+            fallback_model
+                .map(str::to_string)
+                .unwrap_or_else(|| match provider {
+                    ProviderKind::Gemini => "gemini-2.5-flash".to_string(),
+                    ProviderKind::Copilot => "gpt-5.3-codex".to_string(),
+                    ProviderKind::Ollama => "llama3".to_string(),
+                })
+        })
+    }
+
     pub fn gemini_api_key(&self) -> Option<String> {
         self.value(Self::KEY_GEMINI_API_KEY)
     }
@@ -92,6 +112,29 @@ mod tests {
         assert_eq!(
             AiPrefsReader.ollama_base_url(),
             "http://localhost:11434"
+        );
+    }
+
+    #[test]
+    fn effective_model_prefers_saved_setting_over_fallback() {
+        init_db();
+        set_pref(AiPrefsReader::KEY_MODEL, "custom-model");
+
+        let reader = AiPrefsReader;
+        assert_eq!(
+            reader.effective_model(ProviderKind::Gemini, Some("fallback-model")),
+            "custom-model"
+        );
+    }
+
+    #[test]
+    fn effective_model_falls_back_to_provider_default_when_unset() {
+        init_db();
+
+        let reader = AiPrefsReader;
+        assert_eq!(
+            reader.effective_model(ProviderKind::Ollama, None),
+            "llama3"
         );
     }
 

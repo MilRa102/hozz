@@ -53,6 +53,11 @@ impl Message {
             status: MessageStatus::Complete,
         }
     }
+
+    pub fn user(content: impl Into<String>) -> Self {
+        Self::new(Role::User, content, "{}")
+    }
+
 }
 
 /// Supported LLM providers, user-selectable in settings.

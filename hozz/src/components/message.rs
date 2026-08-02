@@ -294,25 +294,23 @@ fn enhance_markdown_html(html: String) -> String {
 
 #[component]
 pub fn MarkdownMessage(content: String) -> Element {
-    let html = use_memo(move || {
-        let mut options = comrak::Options::default();
-        options.extension.strikethrough = true;
-        options.extension.table = true;
-        options.extension.tasklist = true;
-        options.extension.autolink = true;
-        options.extension.tagfilter = true;
-        options.parse.tasklist_in_table = true;
-        options.render.r#unsafe = true;
+    let mut options = comrak::Options::default();
+    options.extension.strikethrough = true;
+    options.extension.table = true;
+    options.extension.tasklist = true;
+    options.extension.autolink = true;
+    options.extension.tagfilter = true;
+    options.parse.tasklist_in_table = true;
+    options.render.r#unsafe = true;
 
-        let adapter =
-            comrak::plugins::syntect::SyntectAdapter::new(Some("base16-ocean.dark"));
-        let mut plugins = comrak::options::Plugins::default();
-        plugins.render.codefence_syntax_highlighter = Some(&adapter);
+    let adapter =
+        comrak::plugins::syntect::SyntectAdapter::new(Some("base16-ocean.dark"));
+    let mut plugins = comrak::options::Plugins::default();
+    plugins.render.codefence_syntax_highlighter = Some(&adapter);
 
-        let rendered =
-            comrak::markdown_to_html_with_plugins(&content, &options, &plugins);
-        enhance_markdown_html(rendered)
-    });
+    let rendered =
+        comrak::markdown_to_html_with_plugins(&content, &options, &plugins);
+    let html = enhance_markdown_html(rendered);
 
     rsx! {
         style { "{MARKDOWN_STYLE}" }

@@ -1,3 +1,4 @@
+pub mod dropdown_menu;
 pub mod button;
 pub mod card;
 pub mod control;
@@ -12,3 +13,5 @@ pub mod panel;
 pub mod pet;
 pub mod switch;
 pub mod toast;
+pub mod alert_dialog;
+pub mod badge;

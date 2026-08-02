@@ -1,26 +1,25 @@
 use std::sync::Arc;
 
 use rig_core::{completion::GetTokenUsage, streaming::StreamingCompletionResponse};
+use strum::{Display, EnumString};
 use tokio::sync::Mutex;
 
-/// Type-erased pause/resume/cancel control for an in-flight streaming
-/// generation, so callers (the engine, the UI) don't need to know the
-/// concrete provider response type `R` behind a running stream.
-///
-/// `rig_core::streaming::StreamingCompletionResponse::{pause,resume,cancel,is_paused}`
-/// all take `&self`, but actually consuming the stream (`StreamExt::next`)
-/// needs `&mut self`. We reconcile this by sharing the response behind
-/// `Arc<Mutex<_>>`: the poller locks briefly around each `.next().await`, and
-/// control calls lock briefly too. A pause/cancel issued while a chunk is in
-/// flight simply waits for that chunk to arrive (or the stream to end) before
-/// applying — there's no way to interrupt an in-flight network read any
-/// faster than that with the APIs rig-core exposes.
+/// A small command enum for controlling an in-flight streaming generation.
+/// The current provider layer only needs a single cancellation action, so we
+/// keep the contract intentionally narrow and explicit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, EnumString)]
+#[strum(serialize_all = "snake_case")]
+pub enum StreamCommand {
+    #[strum(serialize = "cancel")]
+    Cancel,
+}
+
+/// Type-erased stream-control handle for an in-flight generation, so callers
+/// (the engine, the UI) do not need to know the concrete provider response
+/// type `R` behind the running stream.
 #[async_trait::async_trait]
 pub trait StreamControl: Send + Sync {
-    async fn pause(&self);
-    async fn resume(&self);
-    async fn cancel(&self);
-    async fn is_paused(&self) -> bool;
+    async fn apply(&self, command: StreamCommand);
 }
 
 pub(crate) struct ResponseControl<R>(pub Arc<Mutex<StreamingCompletionResponse<R>>>)
@@ -32,19 +31,32 @@ impl<R> StreamControl for ResponseControl<R>
 where
     R: Clone + Unpin + GetTokenUsage + Send + 'static,
 {
-    async fn pause(&self) {
-        self.0.lock().await.pause();
+    async fn apply(&self, command: StreamCommand) {
+        match command {
+            StreamCommand::Cancel => {
+                if let Ok(guard) = self.0.try_lock() {
+                    guard.cancel();
+                } else {
+                    let res = self.0.clone();
+                    tokio::spawn(async move {
+                        res.lock().await.cancel();
+                    });
+                }
+            }
+        }
     }
+}
 
-    async fn resume(&self) {
-        self.0.lock().await.resume();
-    }
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
 
-    async fn cancel(&self) {
-        self.0.lock().await.cancel();
-    }
+    use super::StreamCommand;
 
-    async fn is_paused(&self) -> bool {
-        self.0.lock().await.is_paused()
+    #[test]
+    fn stream_command_round_trips_with_strum() {
+        let command = StreamCommand::from_str("cancel").expect("cancel should parse");
+        assert_eq!(command, StreamCommand::Cancel);
+        assert_eq!(command.to_string(), "cancel");
     }
 }

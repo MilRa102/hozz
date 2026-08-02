@@ -17,6 +17,7 @@ use dioxus::{
 
 use crate::pages::app::LoaderApp;
 
+pub(crate) const THEME: &str = include_str!("../assets/dx-components-theme.css");
 pub(crate) const MAIN_CSS: &str = include_str!("../assets/main.css");
 pub(crate) const TAILWIND_CSS: &str = include_str!("../assets/tailwind.css");
 pub(crate) const ZERO_EMPTY_BYTES: &[u8] = include_bytes!("../assets/zero_empty.webp");

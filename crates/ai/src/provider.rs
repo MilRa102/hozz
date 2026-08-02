@@ -53,6 +53,7 @@ pub enum ChatEvent {
 
 /// Resolved per-provider connection settings, read from [`crate::AiPrefsReader`]
 /// by the engine before starting a generation.
+#[derive(Clone, Debug)]
 pub enum ProviderConfig {
     Gemini { api_key: String },
     Copilot { api_key: String },

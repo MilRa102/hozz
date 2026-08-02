@@ -10,7 +10,7 @@ use shared::apps::{
 use tokio::time::sleep;
 
 use crate::{
-    MAIN_CSS, TAILWIND_CSS,
+    MAIN_CSS, TAILWIND_CSS, THEME,
     components::{control::TitleBar, toast::Toaster},
     pages::{errors::ErrorScreen, loading::Skeleton},
     route::Route,
@@ -140,6 +140,7 @@ pub(crate) fn LoaderApp() -> Element {
     });
 
     rsx! {
+        style { "{THEME}" }
         style { "{MAIN_CSS}" }
         style { "{TAILWIND_CSS}" }
 

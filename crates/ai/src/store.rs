@@ -22,6 +22,7 @@ fn message_prefix(conversation_id: &str) -> String {
     format!("{conversation_id}:")
 }
 
+#[derive(PartialEq)]
 pub struct ConversationStore;
 
 impl SledManager<Conversation> for ConversationStore {
@@ -60,6 +61,7 @@ impl ConversationStore {
     }
 }
 
+#[derive(PartialEq)]
 pub struct MessageStore;
 
 impl SledManager<Message> for MessageStore {
@@ -83,6 +85,7 @@ impl MessageStore {
     }
 }
 
+#[derive(PartialEq)]
 pub struct FolderStore;
 
 impl SledManager<Folder> for FolderStore {

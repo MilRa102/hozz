@@ -1,17 +1,14 @@
 use std::{
     collections::HashMap,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
 };
 
-use futures::{StreamExt, stream::BoxStream};
+use futures::StreamExt;
 use rig_core::{completion::Message as RigMessage, tool::ToolDyn};
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{broadcast, Mutex, watch};
 
 use crate::{
-    control::StreamControl,
+    control::{StreamCommand, StreamControl},
     model::{Message, MessageStatus, Role},
     provider::{self, ChatEvent, ProviderConfig},
     store::{ConversationStore, MessageStore},
@@ -26,9 +23,21 @@ pub struct GenerationSnapshot {
     pub finished: bool,
 }
 
+/// An event emitted while a generation is streaming.
+#[derive(Debug, Clone)]
+pub enum GenerationEvent {
+    Delta(String),
+    Thinking(String),
+    Finished {
+        text: String,
+        status: MessageStatus,
+    },
+    Error(String),
+}
+
 struct Generation {
-    control: Arc<dyn StreamControl>,
-    cancelled: Arc<AtomicBool>,
+    control: Arc<Mutex<Option<Arc<dyn StreamControl>>>>,
+    cancel_tx: watch::Sender<bool>,
     snapshot_tx: watch::Sender<GenerationSnapshot>,
 }
 
@@ -38,9 +47,9 @@ struct Generation {
 /// driven by a detached `tokio::spawn` task owned by this manager, so
 /// pause/resume/stop (and the Sled writes on completion) keep working even if
 /// the user navigates away from the conversation and back before it finishes.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GenerationManager {
-    active: Mutex<HashMap<String, Generation>>,
+    active: Arc<Mutex<HashMap<String, Generation>>>,
 }
 
 impl GenerationManager {
@@ -56,7 +65,8 @@ impl GenerationManager {
     }
 
     /// Subscribes to live updates for a conversation's in-flight generation,
-    /// if one is currently running.
+    /// if one is currently running. The returned receiver starts from the
+    /// current latest snapshot, so a late subscriber still sees the live state.
     pub async fn subscribe(
         &self,
         conversation_id: &str,
@@ -65,292 +75,231 @@ impl GenerationManager {
             .lock()
             .await
             .get(conversation_id)
-            .map(|generation| generation.snapshot_tx.subscribe())
+            .map(|g| g.snapshot_tx.subscribe())
     }
 
     /// Pauses stream polling; the underlying connection is kept alive. Returns
     /// `false` if no generation is running for this conversation.
-    pub async fn pause(&self, conversation_id: &str) -> bool {
-        match self.active.lock().await.get(conversation_id) {
-            Some(generation) => {
-                generation.control.pause().await;
-                true
-            },
-            None => false,
-        }
-    }
-
-    /// Resumes a previously paused generation. Returns `false` if no
-    /// generation is running for this conversation.
-    pub async fn resume(&self, conversation_id: &str) -> bool {
-        match self.active.lock().await.get(conversation_id) {
-            Some(generation) => {
-                generation.control.resume().await;
-                true
-            },
-            None => false,
-        }
-    }
-
     /// Stops the in-flight generation for a conversation; the partial
     /// assistant message is persisted with `MessageStatus::Cancelled`. Returns
     /// `false` if no generation is running for this conversation.
     pub async fn stop(&self, conversation_id: &str) -> bool {
-        match self.active.lock().await.get(conversation_id) {
-            Some(generation) => {
-                generation.cancelled.store(true, Ordering::SeqCst);
-                generation.control.cancel().await;
-                true
-            },
-            None => false,
+        let generation = self.active.lock().await.remove(conversation_id);
+        if let Some(g) = generation {
+            let _ = g.cancel_tx.send(true);
+            if let Some(ctl) = g.control.lock().await.as_ref() {
+                ctl.apply(StreamCommand::Cancel).await;
+            }
+            true
+        } else {
+            false
         }
     }
 
     /// Persists the user's message, starts a streaming generation for it, and
     /// spawns a detached task that streams deltas, publishes snapshots, and
     /// persists the final assistant message once the stream ends.
+    #[allow(clippy::too_many_lines)]
     pub async fn start(
-        self: &Arc<Self>,
+        &self,
         conversation_id: String,
-        config: ProviderConfig,
-        model: String,
-        tools: Vec<Box<dyn ToolDyn>>,
-        prompt: String,
-    ) -> anyhow::Result<()> {
-        if self.is_generating(&conversation_id).await {
-            anyhow::bail!("A generation is already running for this conversation");
+        history_store: Arc<MessageStore>,
+        _conversation_store: Arc<ConversationStore>,
+        request: GenerationRequest,
+    ) -> Result<(), String> {
+        let (snapshot_tx, _) = watch::channel(GenerationSnapshot {
+            thinking: "Инициализация...".to_string(),
+            ..Default::default()
+        });
+        let (event_tx, _) = broadcast::channel(64);
+        let (cancel_tx, mut cancel_rx) = watch::channel(false);
+        let control_slot: Arc<Mutex<Option<Arc<dyn StreamControl>>>> = Arc::new(Mutex::new(None));
+
+        // 1. Регистрируем активную генерацию в карте МГНОВЕННО, до асинхронной подгрузки сети
+        {
+            let mut guard = self.active.lock().await;
+            guard.insert(
+                conversation_id.clone(),
+                Generation {
+                    control: control_slot.clone(),
+                    cancel_tx: cancel_tx.clone(),
+                    snapshot_tx: snapshot_tx.clone(),
+                },
+            );
         }
 
-        let history = match MessageStore.list(&conversation_id) {
-            Ok(messages) => messages
-                .iter()
-                .map(history_message)
-                .collect::<Vec<_>>(),
-            Err(error) => {
-                tracing::warn!(%conversation_id, %error, "Failed to load conversation history; starting with empty history");
-                Vec::new()
-            },
-        };
+        let active_map = self.active.clone();
+        let conv_id = conversation_id.clone();
+        let event_tx_for_task = event_tx.clone();
 
-        let user_raw =
-            serde_json::to_string(&RigMessage::user(prompt.clone())).unwrap_or_default();
-        let user_message = Message::new(Role::User, prompt.clone(), user_raw);
-        if let Err(error) = MessageStore.append(&conversation_id, &user_message) {
-            tracing::warn!(%conversation_id, %error, "Failed to persist user message");
-        }
-
-        let (events, control) =
-            provider::start_stream(&config, &model, tools, prompt, history).await?;
-
-        let (snapshot_tx, _snapshot_rx) = watch::channel(GenerationSnapshot::default());
-        let cancelled = Arc::new(AtomicBool::new(false));
-
-        self.active.lock().await.insert(
-            conversation_id.clone(),
-            Generation {
-                control,
-                cancelled: cancelled.clone(),
-                snapshot_tx: snapshot_tx.clone(),
-            },
-        );
-
-        let manager = self.clone();
+        // 2. Запускаем фоновый таск обработки генерации
         tokio::spawn(async move {
-            manager
-                .drive(conversation_id, events, snapshot_tx, cancelled)
-                .await;
+            let mut snapshot = GenerationSnapshot {
+                thinking: "Загрузка модели...".to_string(),
+                text: String::new(),
+                finished: false,
+            };
+            let _ = snapshot_tx.send(snapshot.clone());
+
+            let messages = history_store
+                .list(&conv_id)
+                .unwrap_or_default();
+            let history: Vec<RigMessage> = messages.iter().map(history_message).collect();
+
+            let stream_result = provider::start_stream(
+                &request.config,
+                &request.model,
+                request.tools,
+                request.system_prompt,
+                history,
+            ).await;
+
+            let (mut events, control) = match stream_result {
+                Ok(res) => res,
+                Err(err) => {
+                    snapshot.thinking.clear();
+                    snapshot.finished = true;
+                    let _ = snapshot_tx.send(snapshot.clone());
+                    let _ = event_tx_for_task.send(GenerationEvent::Error(err.to_string()));
+                    let _ = event_tx_for_task.send(GenerationEvent::Finished {
+                        text: String::new(),
+                        status: MessageStatus::Error(err.to_string()),
+                    });
+
+                    let msg = Message::new(Role::Assistant, format!("Ошибка генерации: {err}"), "{}");
+                    let _ = history_store.append(&conv_id, &msg);
+                    active_map.lock().await.remove(&conv_id);
+                    return;
+                }
+            };
+
+            // Сохраняем StreamControl для паузы/возобновления
+            {
+                let mut ctl_guard = control_slot.lock().await;
+                *ctl_guard = Some(control);
+            }
+
+            snapshot.thinking = "Размышляет...".to_string();
+            let _ = snapshot_tx.send(snapshot.clone());
+            let _ = event_tx_for_task.send(GenerationEvent::Thinking(
+                "Размышляет...".to_string(),
+            ));
+
+            let mut was_cancelled = false;
+            let mut last_raw = "{}".to_string();
+            let mut last_error: Option<String> = None;
+
+            // 3. Цикл получения чанков с неблокирующим перехватом отмены через select!
+            loop {
+                if *cancel_rx.borrow() {
+                    was_cancelled = true;
+                    break;
+                }
+
+                tokio::select! {
+                    _ = cancel_rx.changed() => {
+                        if *cancel_rx.borrow() {
+                            was_cancelled = true;
+                            break;
+                        }
+                    }
+                    maybe_event = events.next() => {
+                        match maybe_event {
+                            Some(ChatEvent::Delta(delta)) => {
+                                if !snapshot.thinking.is_empty() {
+                                    snapshot.thinking.clear();
+                                }
+                                snapshot.text.push_str(&delta);
+                                let _ = snapshot_tx.send(snapshot.clone());
+                                let _ = event_tx_for_task.send(GenerationEvent::Delta(delta));
+                            }
+                            Some(ChatEvent::Reasoning(reasoning)) => {
+                                snapshot.thinking.push_str(&reasoning);
+                                let _ = snapshot_tx.send(snapshot.clone());
+                                let _ = event_tx_for_task.send(GenerationEvent::Thinking(reasoning));
+                            }
+                            Some(ChatEvent::ToolCallStarted { .. }) => {}
+                            Some(ChatEvent::ToolResultReceived { .. }) => {}
+                            Some(ChatEvent::Done { text, raw }) => {
+                                snapshot.text = text.clone();
+                                last_raw = raw;
+                                break;
+                            }
+                            Some(ChatEvent::Error(err)) => {
+                                last_error = Some(err.clone());
+                                let _ = event_tx_for_task.send(GenerationEvent::Error(err));
+                                break;
+                            }
+                            None => break,
+                        }
+                    }
+                }
+            }
+
+            snapshot.thinking.clear();
+            snapshot.finished = true;
+            let _ = snapshot_tx.send(snapshot.clone());
+
+            let status = if was_cancelled {
+                MessageStatus::Cancelled
+            } else if let Some(ref err) = last_error {
+                MessageStatus::Error(err.clone())
+            } else {
+                MessageStatus::Complete
+            };
+
+            let _ = event_tx_for_task.send(GenerationEvent::Finished {
+                text: snapshot.text.clone(),
+                status: status.clone(),
+            });
+
+            // Сохраняем сформированный или частично отмененный ответ в Sled DB
+            if !snapshot.text.is_empty() || was_cancelled {
+                let msg = Message::new(Role::Assistant, snapshot.text, last_raw);
+                let _ = history_store.append(&conv_id, &msg);
+            }
+
+            active_map.lock().await.remove(&conv_id);
         });
 
         Ok(())
     }
+}
 
-    async fn drive(
-        self: Arc<Self>,
-        conversation_id: String,
-        mut events: BoxStream<'static, ChatEvent>,
-        snapshot_tx: watch::Sender<GenerationSnapshot>,
-        cancelled: Arc<AtomicBool>,
-    ) {
-        let mut text = String::new();
-        let mut thinking = String::new();
-        let mut raw = String::new();
-        let mut status = MessageStatus::Complete;
-
-        while let Some(event) = events.next().await {
-            match event {
-                ChatEvent::Delta(delta) => {
-                    text.push_str(&delta);
-                    let _ = snapshot_tx.send(GenerationSnapshot {
-                        text: text.clone(),
-                        thinking: thinking.clone(),
-                        finished: false,
-                    });
-                },
-                ChatEvent::Reasoning(delta) => {
-                    thinking.push_str(&delta);
-                    let _ = snapshot_tx.send(GenerationSnapshot {
-                        text: text.clone(),
-                        thinking: thinking.clone(),
-                        finished: false,
-                    });
-                },
-                ChatEvent::ToolCallStarted { name, arguments } => {
-                    tracing::debug!(%conversation_id, tool = %name, "Tool call started");
-                    self.persist_tool_call_started(&conversation_id, name, arguments);
-                },
-                ChatEvent::ToolResultReceived { name, payload } => {
-                    tracing::debug!(%conversation_id, tool = %name, "Tool result received");
-                    self.persist_tool_result_received(
-                        &conversation_id,
-                        name,
-                        payload,
-                    );
-                },
-                ChatEvent::Done {
-                    text: final_text,
-                    raw: final_raw,
-                } => {
-                    text = final_text;
-                    raw = final_raw;
-                    status = if cancelled.load(Ordering::SeqCst) {
-                        MessageStatus::Cancelled
-                    } else {
-                        MessageStatus::Complete
-                    };
-                },
-                ChatEvent::Error(error) => {
-                    tracing::warn!(%conversation_id, %error, "Generation failed");
-                    status = MessageStatus::Error(error);
-                },
-            }
-        }
-
-        if raw.is_empty() {
-            raw = serde_json::to_string(&RigMessage::assistant(text.clone()))
-                .unwrap_or_default();
-        }
-
-        let message = Message {
-            status: status.clone(),
-            ..Message::new(Role::Assistant, text, raw)
-        };
-
-        if let Err(error) = MessageStore.append(&conversation_id, &message) {
-            tracing::warn!(%conversation_id, %error, "Failed to persist assistant message");
-        }
-        self.touch_conversation_timestamp(
-            &conversation_id,
-            message.timestamp,
-            "assistant message",
-        );
-
-        let _ = snapshot_tx.send(GenerationSnapshot {
-            text: message.content.clone(),
-            thinking: String::new(),
-            finished: true,
-        });
-        self.active.lock().await.remove(&conversation_id);
-    }
-
-    fn persist_tool_call_started(
-        &self,
-        conversation_id: &str,
-        name: String,
-        arguments: serde_json::Value,
-    ) {
-        let tool_payload = serde_json::json!({
-            "name": name,
-            "arguments": arguments,
-        });
-        let event_payload = serde_json::json!({
-            "event": "tool_call_started",
-            "tool": tool_payload,
-        });
-
-        let content = serde_json::to_string(&event_payload["tool"])
-            .unwrap_or_else(|_| "Инструмент".to_string());
-        let raw = serde_json::to_string(&event_payload).unwrap_or_default();
-
-        let tool_message = Message::new(Role::Tool, content, raw);
-        if let Err(error) = MessageStore.append(conversation_id, &tool_message) {
-            tracing::warn!(%conversation_id, %error, "Failed to persist tool message");
-        }
-
-        self.touch_conversation_timestamp(
-            conversation_id,
-            tool_message.timestamp,
-            "tool message",
-        );
-    }
-
-    fn persist_tool_result_received(
-        &self,
-        conversation_id: &str,
-        name: String,
-        payload: serde_json::Value,
-    ) {
-        let tool_payload = serde_json::json!({
-            "name": name,
-            "result": payload,
-        });
-        let event_payload = serde_json::json!({
-            "event": "tool_result_received",
-            "tool": tool_payload,
-        });
-
-        let content = serde_json::to_string(&event_payload["tool"])
-            .unwrap_or_else(|_| "Инструмент".to_string());
-        let raw = serde_json::to_string(&event_payload).unwrap_or_default();
-
-        let tool_message = Message::new(Role::Tool, content, raw);
-        if let Err(error) = MessageStore.append(conversation_id, &tool_message) {
-            tracing::warn!(%conversation_id, %error, "Failed to persist tool result message");
-        }
-
-        self.touch_conversation_timestamp(
-            conversation_id,
-            tool_message.timestamp,
-            "tool result",
-        );
-    }
-
-    fn touch_conversation_timestamp(
-        &self,
-        conversation_id: &str,
-        timestamp: i64,
-        source: &str,
-    ) {
-        match ConversationStore.find(conversation_id) {
-            Ok(Some(mut conversation)) => {
-                conversation.updated_at = timestamp;
-                if let Err(error) = ConversationStore.upsert(&conversation) {
-                    tracing::warn!(%conversation_id, %error, "Failed to update conversation timestamp for {source}");
-                }
-            },
-            Ok(None) => {},
-            Err(error) => {
-                tracing::warn!(%conversation_id, %error, "Failed to load conversation to update timestamp for {source}");
-            },
-        }
-    }
+pub struct GenerationRequest {
+    pub config: ProviderConfig,
+    pub model: String,
+    pub system_prompt: String,
+    pub tools: Vec<Box<dyn ToolDyn>>,
 }
 
 /// Rehydrates a persisted [`Message`] back into a `rig_core` message for
 /// multi-turn context, preferring the full-fidelity `raw` JSON and falling
 /// back to plain text if it's missing or fails to parse (e.g. older data).
-fn history_message(message: &Message) -> RigMessage {
-    serde_json::from_str(&message.raw).unwrap_or_else(|_| match message.role {
-        Role::User => RigMessage::user(message.content.clone()),
-        Role::Assistant | Role::Tool => RigMessage::assistant(message.content.clone()),
-        Role::System => RigMessage::System {
-            content: message.content.clone(),
-        },
-    })
+pub fn history_message(msg: &Message) -> RigMessage {
+    if !msg.raw.is_empty() && msg.raw != "{}" 
+        && let Ok(parsed) = serde_json::from_str::<RigMessage>(&msg.raw) {
+            return parsed;
+        }
+
+    match msg.role {
+        Role::User => RigMessage::user(&msg.content),
+        Role::Assistant => RigMessage::assistant(&msg.content),
+        Role::System => RigMessage::user(&msg.content),
+        Role::Tool => RigMessage::user(&msg.content),
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generation_events_can_model_text_deltas() {
+        let event = GenerationEvent::Delta("hello".to_string());
+        assert!(matches!(event, GenerationEvent::Delta(ref text) if text == "hello"));
+    }
 
     #[test]
     #[allow(clippy::unwrap_used)]
@@ -365,7 +314,7 @@ mod tests {
             RigMessage::Assistant { content, .. } => {
                 let payload = serde_json::to_string(&content).unwrap_or_default();
                 assert!(payload.contains("from raw"));
-            },
+            }
             other => panic!("Expected assistant message, got {other:?}"),
         }
     }
@@ -387,10 +336,7 @@ mod tests {
 
     #[tokio::test]
     async fn manager_control_methods_return_false_when_no_generation_exists() {
-        let manager = Arc::new(GenerationManager::new());
-        assert!(!manager.pause("missing").await);
-        assert!(!manager.resume("missing").await);
+        let manager = GenerationManager::new();
         assert!(!manager.stop("missing").await);
-        assert!(manager.subscribe("missing").await.is_none());
     }
 }

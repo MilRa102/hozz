@@ -1,26 +1,43 @@
-use std::{collections::BTreeSet, sync::Arc};
+use dioxus::prelude::*;
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+use dioxus_icons::lucide::{Trash2, MessageCircle, Menu, ReceiptText, Loader, CircleStop, Send};
+use crate::components::dropdown_menu::{DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger};
+use strum::IntoEnumIterator;
 
 use ai::{
-    AiPrefsReader, Conversation, ConversationStore, Folder, FolderStore,
+    AiPrefsReader, Conversation, ConversationStore,
     GenerationManager, Message, MessageStore, ProviderConfig, ProviderKind, Role,
 };
-use dioxus::{document::eval, logger::tracing, prelude::*};
+use dioxus::{document::eval, logger::tracing};
 use dioxus_free_icons::icons::{
-    hi_outline_icons::{HiChat, HiFolder, HiFolderAdd, HiFolderRemove}, io_icons::IoArrowBack, ld_icons::LdList, md_av_icons::{MdPause, MdPlayArrow, MdStop}, md_communication_icons::MdChatBubble, md_content_icons::MdSend, md_file_icons::MdCreateNewFolder,
+    hi_outline_icons::HiChat,
 };
 use shared::apps::{LoggingLayer, Orchestrator};
 
 use crate::{components::message::MarkdownMessage, utils::Icon};
 
-fn truncate_text(input: String, max: usize) -> String {
-    if input.chars().count() <= max {
-        return input;
-    }
-
-    let short = input.chars().take(max).collect::<String>();
-    format!("{short}...")
+#[derive(Clone, Copy, strum_macros::Display, strum_macros::EnumIter, PartialEq)]
+enum MenuOperation {
+    #[strum(to_string = "Удалить")]
+    Delete,
 }
 
+impl MenuOperation {
+    fn into_icon(self) -> Element {
+        match self {
+            MenuOperation::Delete => rsx!(Trash2 { size: "13px", style: "color: #ff7777;" }),
+        }
+    }
+}
+
+/// Преобразует JSON-значение в строку, чтобы его можно было показать в карточке деталей инструмента.
 fn value_to_text(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => "null".to_string(),
@@ -33,1153 +50,726 @@ fn value_to_text(value: &serde_json::Value) -> String {
     }
 }
 
-fn flatten_tool_details(
-    prefix: &str,
-    value: &serde_json::Value,
-    output: &mut Vec<(String, String)>,
-) {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, child) in map {
-                let next = if prefix.is_empty() {
-                    key.to_string()
+/// Извлекает название tool и его аргументы из raw/content payload, которые приходят от генератора.
+fn extract_tool_details(
+    raw: &str,
+    content: &str,
+) -> (String, Vec<(String, String)>) {
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(raw) 
+        && let Some(function) = val.get("function") {
+            let name = function
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("tool")
+                .to_string();
+
+            let mut details = Vec::new();
+            if let Some(args) = function.get("arguments") {
+                if let Some(obj) = args.as_object() {
+                    for (k, v) in obj {
+                        details.push((k.clone(), value_to_text(v)));
+                    }
                 } else {
-                    format!("{prefix}.{key}")
-                };
-                flatten_tool_details(&next, child, output);
+                    details.push(("arguments".to_string(), value_to_text(args)));
+                }
             }
-        },
-        serde_json::Value::Array(values) => {
-            for (idx, child) in values.iter().enumerate() {
-                let next = if prefix.is_empty() {
-                    format!("[{idx}]")
-                } else {
-                    format!("{prefix}[{idx}]")
-                };
-                flatten_tool_details(&next, child, output);
+            return (name, details);
+        }
+    
+
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
+        let name = val
+            .get("name")
+            .or_else(|| val.get("tool"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("tool")
+            .to_string();
+
+        let mut details = Vec::new();
+        if let Some(obj) = val.as_object() {
+            for (k, v) in obj {
+                if k != "name" && k != "tool" {
+                    details.push((k.clone(), value_to_text(v)));
+                }
             }
-        },
-        _ => {
-            if prefix.is_empty() {
-                return;
-            }
-            let text = truncate_text(value_to_text(value), 120);
-            output.push((prefix.to_string(), text));
-        },
+        }
+        return (name, details);
+    }
+
+    ("tool".to_string(), vec![("payload".to_string(), content.to_string())])
+}
+
+/// Возвращает цветовую схему для бейджа провайдера в списке диалогов.
+fn provider_badge_class(kind: &ProviderKind) -> &'static str {
+    match kind {
+        ProviderKind::Ollama => "bg-orange-500/10 text-orange-400 border-orange-500/20",
+        ProviderKind::Gemini => "bg-blue-500/10 text-blue-400 border-blue-500/20",
+        ProviderKind::Copilot => "bg-purple-500/10 text-purple-400 border-purple-500/20",
     }
 }
 
-fn find_tool_name(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::Object(map) => {
-            for key in ["name", "tool", "tool_name"] {
-                if let Some(serde_json::Value::String(name)) = map.get(key) {
-                    let name = name.trim();
-                    if !name.is_empty() {
-                        return Some(name.to_string());
+/// Возвращает цветовую схему для бейджа tool-события: вызов или результат.
+fn tool_badge_class(event_kind: &str) -> &'static str {
+    match event_kind {
+        "result" => "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+        _ => "bg-violet-500/10 text-violet-400 border-violet-500/30",
+    }
+}
+
+mod sidebar {
+
+    use super::*;
+
+    /// Боковая панель с перечнем диалогов и кнопкой создания нового.
+    #[component]
+    pub(super) fn ChatSidebar(
+        conversations: Vec<Conversation>,
+        selected_conversation_id: Option<String>,
+        on_select_conversation: Callback<String>,
+        on_create_conversation: Callback<()>,
+        on_delete_conversation: Callback<String>,
+    ) -> Element {
+        rsx! {
+            div { class: "flex w-72 flex-col border-r border-zinc-800/80 bg-zinc-900/40 backdrop-blur-xl",
+                div { class: "flex items-center justify-between border-b border-zinc-800/80 p-4",
+                    h2 { class: "font-semibold text-sm tracking-wide text-zinc-200", "Диалоги" }
+                    button {
+                        class: "rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors",
+                        onclick: move |_| on_create_conversation.call(()),
+                            title: "Новый чат",
+                            MessageCircle { size: "18px"}
+                    }
+                }
+
+                div { class: "flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar",
+                    for conversation in conversations.iter() {
+                        ChatConversationItem {
+                            conversation: conversation.clone(),
+                            is_selected: selected_conversation_id.as_ref() == Some(&conversation.id),
+                            on_select_conversation,
+                            on_delete_conversation,
+                        }
                     }
                 }
             }
+        }
+    }
 
-            if let Some(function) = map.get("function")
-                && let Some(name) = find_tool_name(function)
-            {
-                return Some(name);
-            }
-            if let Some(call) = map.get("tool_call")
-                && let Some(name) = find_tool_name(call)
-            {
-                return Some(name);
-            }
+    /// Один элемент списка диалогов. В будущем можно выделить отдельную карточку с дополнительной информацией.
+    #[component]
+    fn ChatConversationItem(
+        conversation: Conversation,
+        is_selected: bool,
+        on_select_conversation: Callback<String>,
+        on_delete_conversation: Callback<String>,
+    ) -> Element {
+        let badge_style = provider_badge_class(&conversation.provider);
+        let selected_class = if is_selected {
+            "bg-violet-500/10 border-violet-500/30 text-violet-200 shadow-sm"
+        } else {
+            "border-transparent text-zinc-400 hover:bg-zinc-900/80 hover:text-zinc-200"
+        };
 
-            for child in map.values() {
-                if let Some(name) = find_tool_name(child) {
-                    return Some(name);
+        let menu_operations = MenuOperation::iter().enumerate().map(|(idx, op)| {
+            rsx! {
+                DropdownMenuItem::<MenuOperation> {
+                    key: "{idx}",
+                    value: op,
+                    index: idx,
+                    on_select: {
+                        let conversation_id = conversation.id.clone();
+                        move |selected: MenuOperation| {
+                            match selected {
+                                MenuOperation::Delete => on_delete_conversation.call(conversation_id.clone()),
+                            }
+                        }
+                    },
+                    div { class: "flex items-center gap-2 justify-between w-full",
+                        {op.into_icon()} {op.to_string()}
+                    }
                 }
             }
+        });
 
-            None
-        },
-        serde_json::Value::Array(values) => {
-            for child in values {
-                if let Some(name) = find_tool_name(child) {
-                    return Some(name);
+        rsx! {
+            div {
+                key: "{conversation.id}",
+                class: format!(
+                    "group flex items-center justify-between rounded-xl px-3 py-2.5 gap-6 text-xs transition-all cursor-pointer border {}",
+                    selected_class
+                ),
+                onclick: {
+                    let conversation_id = conversation.id.clone();
+                    move |_| on_select_conversation.call(conversation_id.clone())
+                },
+
+                DropdownMenu { default_open: false,
+                    DropdownMenuTrigger { Menu { size: "16px" } }
+                    DropdownMenuContent { {menu_operations} }
+                }
+
+                span { class: "truncate font-medium pr-2", "{conversation.title}" }
+                span { class: "rounded-md border px-1.5 py-0.5 font-mono text-[10px] uppercase font-semibold {badge_style}",
+                    "{conversation.provider}"
                 }
             }
-            None
-        },
-        _ => None,
+        }
     }
 }
 
-fn parse_content_pairs(content: &str) -> Vec<(String, String)> {
-    content
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                return None;
+mod chat_area {
+    use crate::components::badge::{Badge, BadgeVariant};
+
+use super::*;
+
+    /// Шапка чата с названием, моделью и статусом генерации.
+    #[component]
+    pub(super) fn ChatHeader(
+        conversation: Conversation,
+        is_thinking: bool,
+        generation_active: bool,
+    ) -> Element {
+        rsx! {
+            div { class: "flex items-center justify-between px-6 py-4 pb-2 bg-zinc-900/20 backdrop-blur-md",
+                div { class: "flex items-center gap-3",
+                    h3 { class: "font-medium text-sm text-zinc-100", "{conversation.title}" }
+                    Badge {
+                        variant: BadgeVariant::Primary,
+                        "{conversation.provider} • {conversation.model}"
+                    }
+                }
+                BadgeThinking {
+                    is_thinking,
+                    generation_active,
+                }
             }
+        }
+    }
 
-            let (key, value) = trimmed.split_once(':')?;
-            let key = key.trim();
-            let value = value.trim();
-            if key.is_empty() || value.is_empty() {
-                return None;
+    /// Список сообщений и стримингового текста. Здесь же можно позже вынести логику рендера сообщений в отдельный helper.
+    #[component]
+    pub(super) fn MessageList(
+        messages: Vec<Message>,
+        stream_text: String,
+        generation_active: bool,
+    ) -> Element {
+        rsx! {
+            div {
+                id: "chat-scroll-container",
+                class: "flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar",
+                for msg in messages.iter() {
+                    div {
+                        key: "{msg.id}",
+                        class: format!(
+                            "flex flex-col {}",
+                            if msg.role == Role::User { "items-end" } else { "items-start" }
+                        ),
+                        if msg.role == Role::Tool {
+                            tool_message_content { msg: msg.clone() }
+                        } else {
+                            div {
+                                class: format!(
+                                    "max-w-[85%] text-sm leading-relaxed {}",
+                                    if msg.role == Role::User {
+                                        "rounded-2xl border bg-violet-500/10 border-violet-500/30 px-4 py-3 text-zinc-100"
+                                    } else {
+                                        "px-0 py-0 text-zinc-200"
+                                    }
+                                ),
+                                MarkdownMessage { content: msg.content.clone() }
+                            }
+                        }
+                    }
+                }
+
+                if generation_active && !stream_text.is_empty() {
+                    div { class: "flex flex-col items-start",
+                        div { class: "max-w-[85%] px-0 py-0 text-sm leading-relaxed text-zinc-100",
+                            MarkdownMessage { content: stream_text }
+                        }
+                    }
+                }
             }
-
-            Some((key.to_string(), truncate_text(value.to_string(), 120)))
-        })
-        .collect()
-}
-
-fn tool_display_data(message: &Message) -> (String, String, Vec<(String, String)>) {
-    let mut name: Option<String> = None;
-    let mut details = Vec::<(String, String)>::new();
-    let mut event_kind = "call".to_string();
-
-    if let Ok(raw_json) = serde_json::from_str::<serde_json::Value>(&message.raw) {
-        if name.is_none() {
-            name = find_tool_name(&raw_json);
         }
-        if let Some(event) = raw_json.get("event")
-            && event == "tool_result_received"
-        {
-            event_kind = "result".to_string();
+    }
+
+    /// Поле ввода и группа кнопок отправки/паузы/остановки.
+    #[component]
+    pub(super) fn ChatComposer(
+        input_text: String,
+        generation_active: bool,
+        on_input: Callback<String>,
+        on_submit: Callback<()>,
+        on_stop: Callback<()>,
+    ) -> Element {
+        rsx! {
+            div { class: "px-4 py-3 bg-transparent",
+                div { class: "relative flex flex-col rounded-2xl border border-white/10 bg-zinc-900/50 shadow-sm focus-within:border-violet-500/50 transition-all",
+                    textarea {
+                        class: "w-full resize-none bg-transparent p-4 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none custom-scrollbar min-h-[56px] max-h-[200px]",
+                        placeholder: "Напишите сообщение...",
+                        value: "{input_text}",
+                        oninput: move |evt| on_input.call(evt.value()),
+                        onkeydown: move |evt| {
+                            let key = evt.key();
+                            if key == Key::Enter && !evt.modifiers().shift() && !evt.modifiers().ctrl() {
+                                evt.prevent_default();
+                                on_submit.call(());
+                            } else if key == Key::Escape && generation_active {
+                                evt.prevent_default();
+                                on_stop.call(());
+                            }
+                        },
+                    }
+
+                    div { class: "flex items-center justify-between px-4 py-2.5 bg-transparent rounded-b-2xl",
+                        div { class: "text-xs font-mono text-zinc-500", "Enter для отправки • Shift+Enter для переноса • Esc для остановки" }
+                        div { class: "flex items-center gap-2",
+                            if generation_active {
+                                button {
+                                    class: "flex items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 p-2 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer shadow-lg shadow-red-500/20",
+                                    onclick: move |_| on_stop.call(()),
+                                    title: "Остановить",
+                                    CircleStop { size: "20px", style: "background-color: #ff5e5e" }
+                                }
+                            } else {
+                                button {
+                                    class: "flex items-center justify-center rounded-xl bg-violet-600 p-2 text-white hover:bg-violet-500 transition-all disabled:opacity-50 shadow-lg shadow-violet-600/20 cursor-pointer hover:shadow-violet-600/40",
+                                    disabled: input_text.trim().is_empty(),
+                                    onclick: move |_| on_submit.call(()),
+                                    Send { size: "24px" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-        flatten_tool_details("raw", &raw_json, &mut details);
     }
 
-    if let Ok(content_json) = serde_json::from_str::<serde_json::Value>(&message.content)
-    {
-        if name.is_none() {
-            name = find_tool_name(&content_json);
+    /// Пустое состояние для случая, когда диалог ещё не выбран.
+    /// TODO: в будущем можно объединить его с общим состоянием загрузки/ошибок, чтобы не держать отдельные ветки UI.
+    #[component]
+    pub(super) fn EmptyChatState() -> Element {
+        rsx! {
+            div { class: "flex flex-1 flex-col items-center justify-center text-zinc-500 space-y-3",
+                MessageCircle { size: "30px" }
+                p { class: "text-sm font-medium", "Выберите или создайте новый диалог" }
+            }
         }
-        flatten_tool_details("content", &content_json, &mut details);
-    } else {
-        details.extend(parse_content_pairs(&message.content));
     }
 
-    if name.is_none() {
-        name = message
-            .content
-            .lines()
-            .map(str::trim)
-            .find(|line| !line.is_empty())
-            .map(|line| {
-                line.split([':', '(', '{'])
-                    .next()
-                    .unwrap_or(line)
-                    .trim()
-                    .to_string()
-            })
-            .filter(|line| !line.is_empty());
+    #[component]
+    pub(super) fn BadgeThinking(
+        is_thinking: bool,
+        generation_active: bool,
+    ) -> Element {
+        if !generation_active {
+            return rsx! {};
+        }
+
+        let (bg_color, icon, text) = if is_thinking {
+            ("#47568f", rsx!(Loader { size: "13px" }), "Размышляет")
+        } else {
+            ("#5c3d76", rsx!(ReceiptText { size: "13px" }), "Отвечает")
+        };
+
+        rsx! {
+            Badge {
+                variant: BadgeVariant::Secondary,
+                style: format!("background-color: {}", bg_color),
+                {icon}
+                "{text}"
+            }
+        }
     }
 
-    let mut dedup = BTreeSet::new();
-    details.retain(|(key, value)| dedup.insert((key.clone(), value.clone())));
-    details.truncate(24);
+    #[component]
+    pub(super) fn tool_message_content(msg: Message) -> Element {
+        let raw_meta = if msg.raw.trim().is_empty() { "{}" } else { &msg.raw };
+        let event_kind = if raw_meta.contains("\"function\"") {
+            "call"
+        } else {
+            "result"
+        };
 
-    let tool_name = name.unwrap_or_else(|| "Инструмент".to_string());
-    (tool_name, event_kind, details)
-}
+        let (tool_name, details) = extract_tool_details(raw_meta, &msg.content);
+        let badge_class = tool_badge_class(event_kind);
+        let has_details = !details.is_empty();
 
-fn thinking_preview(input: &str) -> Option<String> {
-    let first_non_empty = input
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())?;
+        let badge_label = if event_kind == "result" {
+            "результат"
+        } else {
+            "вызов"
+        };
 
-    let heading = first_non_empty.trim_start_matches('#').trim();
-    let bold = first_non_empty
-        .split("**")
-        .nth(1)
-        .or_else(|| first_non_empty.split("__").nth(1))
-        .unwrap_or(first_non_empty);
+        rsx! {
+            div { class: "relative group",
+                div { class: "inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 {badge_class}",
+                    span { class: "text-sm", if event_kind == "result" { "◉" } else { "⚙" } }
+                    span { class: "font-mono text-[11px] uppercase tracking-[0.16em]", "{badge_label}" }
+                    span { class: "font-mono text-xs text-zinc-100 font-semibold", "{tool_name}" }
+                }
 
-    let normalized = if !heading.is_empty() && heading != first_non_empty {
-        heading
-    } else {
-        bold
+                if has_details {
+                    div { class: "pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 hidden min-w-[300px] max-w-[520px] group-hover:block",
+                        div { class: "rounded-xl border border-violet-400/30 bg-zinc-950/95 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.6)] backdrop-blur-md",
+                            table { class: "w-full text-xs border-separate border-spacing-y-1",
+                                tbody {
+                                    for (key, value) in details.iter() {
+                                        tr {
+                                            td { class: "align-top pr-3 text-violet-300 font-mono whitespace-nowrap", "{key}" }
+                                            td { class: "align-top text-zinc-300 font-mono break-all", "{value}" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-    .trim_matches('*')
-    .trim_matches('_')
-    .trim_matches('`')
-    .trim_matches('-')
-    .trim_matches('>')
-    .trim();
-
-    if normalized.is_empty() {
-        return None;
-    }
-
-    let end = normalized
-        .find(['.', '!', '?', ':', '\n'])
-        .unwrap_or(normalized.len());
-    let short = normalized[..end].trim();
-    let short = short
-        .split_whitespace()
-        .take(8)
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    if short.is_empty() { None } else { Some(short) }
-}
-
-fn conversation_title_from_prompt(prompt: &str) -> String {
-    let trimmed = prompt.trim();
-    if trimmed.is_empty() {
-        return "Новый диалог".to_string();
-    }
-
-    trimmed.chars().take(48).collect()
-}
-
-fn provider_config(reader: &AiPrefsReader) -> anyhow::Result<ProviderConfig> {
-    let provider = reader.provider().unwrap_or(ProviderKind::Gemini);
-
-    match provider {
-        ProviderKind::Gemini => {
-            let key = reader
-                .gemini_api_key()
-                .filter(|v| !v.trim().is_empty())
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Не указан Gemini API key в настройках")
-                })?;
-            Ok(ProviderConfig::Gemini { api_key: key })
-        },
-        ProviderKind::Copilot => {
-            let key = reader
-                .copilot_api_key()
-                .filter(|v| !v.trim().is_empty())
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Не указан Copilot API key в настройках")
-                })?;
-            Ok(ProviderConfig::Copilot { api_key: key })
-        },
-        ProviderKind::Ollama => Ok(ProviderConfig::Ollama {
-            base_url: reader.ollama_base_url(),
-        }),
-    }
-}
-
-fn model_for_provider(reader: &AiPrefsReader, provider: ProviderKind) -> String {
-    reader.model().unwrap_or_else(|| match provider {
-        ProviderKind::Gemini => "gemini-2.5-flash".to_string(),
-        ProviderKind::Copilot => "gpt-5.3-codex".to_string(),
-        ProviderKind::Ollama => "llama3".to_string(),
-    })
-}
-
-fn row_class(selected: bool) -> &'static str {
-    if selected {
-        "border-cyan-500/60 bg-cyan-500/10"
-    } else {
-        "border-white/10 bg-black/40"
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum ContextMenuTarget {
-    Folder(String),
-    Conversation(String),
 }
 
 #[component]
 pub fn ChatPage() -> Element {
     let orch = consume_context::<Arc<Orchestrator>>();
-    let manager = use_context::<Arc<GenerationManager>>();
 
-    let mut reload_tick = use_signal(|| 0u64);
-    let mut conversations = use_signal(Vec::<Conversation>::new);
-    let mut folders = use_signal(Vec::<Folder>::new);
-    let mut messages = use_signal(Vec::<Message>::new);
-
-    let mut selected_conversation_id = use_signal(|| None::<String>);
-    let mut active_folder_id = use_signal(|| None::<String>);
-
-    let mut input = use_signal(String::new);
+    let mut selected_conversation_id = use_signal(|| Option::<String>::None);
+    let mut input_text = use_signal(String::new);
     let mut stream_text = use_signal(String::new);
-    let mut generation_active = use_signal(|| false);
-    let mut generation_paused = use_signal(|| false);
     let mut is_thinking = use_signal(|| false);
-    let mut thinking_text = use_signal(String::new);
+    let mut generation_active = use_signal(|| false);
 
-    let mut create_menu_open = use_signal(|| false);
-    let mut creating_folder = use_signal(|| false);
-    let mut new_folder_name = use_signal(String::new);
-    let mut context_menu = use_signal(|| None::<ContextMenuTarget>);
+    let mut reload_tick = use_signal(|| 0);
+    let mounted = use_hook(|| Arc::new(AtomicBool::new(true)));
+    let mounted_for_drop = mounted.clone();
 
-    let manager_for_effect = manager.clone();
+    use_drop(move || {
+        mounted_for_drop.store(false, Ordering::SeqCst);
+    });
 
+    let conversations = use_memo(move || {
+        let _ = reload_tick();
+        ConversationStore.list().unwrap_or_default()
+    });
+
+    let selected_conversation = use_memo(move || {
+        let _ = reload_tick();
+        selected_conversation_id().and_then(|id| ConversationStore.find(&id).ok().flatten())
+    });
+
+    let current_messages = use_memo(move || {
+        let _ = reload_tick();
+        if let Some(id) = selected_conversation_id() {
+            let mut messages = MessageStore.list(&id).unwrap_or_default();
+            messages.sort_by_key(|msg| msg.timestamp);
+            messages
+        } else {
+            vec![]
+        }
+    });
+
+    // Обработчик авто-скролла вниз при стриминге.
+    // TODO: позже можно вынести эту логику в маленький helper, чтобы не дублировать поведение для разных состояний UI.
     use_effect(move || {
-        let _ = messages();
         let _ = stream_text();
-
-        let js = r#"window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });"#;
-        let _ = eval(js);
+        let _ = current_messages();
+        spawn(async move {
+            let _ = eval(
+                r#"
+                const el = document.getElementById('chat-scroll-container');
+                if (el) { el.scrollTop = el.scrollHeight; }
+            "#,
+            )
+            .await;
+        });
     });
 
-    use_effect(move || {
-        let _ = input();
+    let provider_config = move || -> ProviderConfig {
+        let prefs = AiPrefsReader;
+        let provider = prefs.effective_provider(ProviderKind::Ollama);
 
-        let js = r#"(() => {
-            const el = document.getElementById('chat-input-textarea');
-            if (!el) return;
-            const minHeight = 52;
-            const maxHeight = 156;
-            el.style.height = 'auto';
-            const nextHeight = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
-            el.style.height = `${nextHeight}px`;
-            el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
-        })();"#;
-        let _ = eval(js);
-    });
-
-    use_effect(move || {
-        let _ = reload_tick();
-
-        let mut list = ConversationStore.list().unwrap_or_default();
-        list.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
-        conversations.set(list.clone());
-
-        let mut fs = FolderStore.list().unwrap_or_default();
-        fs.sort_by(|a, b| a.name.cmp(&b.name));
-        folders.set(fs);
-
-        if selected_conversation_id().is_none() {
-            selected_conversation_id.set(list.first().map(|c| c.id.clone()));
+        match provider {
+            ProviderKind::Ollama => ProviderConfig::Ollama {
+                base_url: prefs.ollama_base_url(),
+            },
+            ProviderKind::Gemini => ProviderConfig::Gemini {
+                api_key: prefs.gemini_api_key().unwrap_or_default(),
+            },
+            ProviderKind::Copilot => ProviderConfig::Copilot {
+                api_key: prefs.copilot_api_key().unwrap_or_default(),
+            },
         }
-    });
+    };
 
-    use_effect(move || {
-        let _ = reload_tick();
+    // Группа обработчиков состояния чата.
+    // TODO: в следующем проходе их можно собрать в один маленький helper/struct, чтобы упростить чтение шаблона.
+    let mut handle_select_conversation = move |conversation_id: String| {
+        selected_conversation_id.set(Some(conversation_id));
+        generation_active.set(false);
+        is_thinking.set(false);
+        stream_text.set(String::new());
+    };
 
-        if let Some(conversation_id) = selected_conversation_id() {
-            let loaded = MessageStore
-                .list(&conversation_id)
-                .unwrap_or_default();
-            messages.set(loaded);
-        } else {
-            messages.set(Vec::new());
-        }
-    });
-
-    use_effect(move || {
-        let _ = reload_tick();
-
-        if let Some(conversation_id) = selected_conversation_id() {
-            let manager = manager_for_effect.clone();
-            let mut generation_active = generation_active;
-            let mut generation_paused = generation_paused;
-            let mut stream_text = stream_text;
-            let mut thinking_text = thinking_text;
-            let mut is_thinking = is_thinking;
-            let mut reload_tick = reload_tick;
-            spawn(async move {
-                generation_active.set(manager.is_generating(&conversation_id).await);
-                if !generation_active() {
-                    generation_paused.set(false);
-                    is_thinking.set(false);
-                    thinking_text.set(String::new());
-                    stream_text.set(String::new());
-                }
-
-                if let Some(mut rx) = manager.subscribe(&conversation_id).await {
-                    loop {
-                        if rx.changed().await.is_err() {
-                            break;
-                        }
-                        let snapshot = rx.borrow().clone();
-                        thinking_text.set(snapshot.thinking.clone());
-                        is_thinking.set(
-                            !snapshot.finished && !snapshot.thinking.trim().is_empty(),
-                        );
-                        stream_text.set(snapshot.text);
-                        generation_active.set(!snapshot.finished);
-                        if snapshot.finished {
-                            generation_paused.set(false);
-                            is_thinking.set(false);
-                            thinking_text.set(String::new());
-                            reload_tick.set(reload_tick() + 1);
-                            break;
-                        }
-                    }
-                }
-            });
-        } else {
-            thinking_text.set(String::new());
+    let mut handle_create_conversation = move || {
+        let prefs = AiPrefsReader;
+        let provider = prefs.effective_provider(ProviderKind::Ollama);
+        let model = prefs.effective_model(provider, Some("llama3.1"));
+        let new_conv = Conversation::new("Новый чат", provider, model);
+        if ConversationStore.upsert(&new_conv).is_ok() {
+            selected_conversation_id.set(Some(new_conv.id));
+            generation_active.set(false);
             is_thinking.set(false);
             stream_text.set(String::new());
-            generation_active.set(false);
-            generation_paused.set(false);
+            reload_tick.write();
         }
-    });
-
-    let folders_list = folders();
-    let conversations_all = conversations();
-    let active_folder = active_folder_id();
-
-    let chats_for_view: Vec<Conversation> = match active_folder.as_deref() {
-        Some(folder_id) => conversations_all
-            .iter()
-            .filter(|c| c.folder_id.as_deref() == Some(folder_id))
-            .cloned()
-            .collect(),
-        None => conversations_all.clone(),
     };
 
-    let selected_conversation = selected_conversation_id().and_then(|id| {
-        conversations_all
-            .iter()
-            .find(|c| c.id == id)
-            .cloned()
-    });
-
-    let title = selected_conversation
-        .as_ref()
-        .map(|c| c.title.clone())
-        .unwrap_or_else(|| "Выберите диалог".to_string());
-
-    let input_status = if generation_active() {
-        if generation_paused() {
-            "Пауза"
-        } else if is_thinking() {
-            "Размышляет"
-        } else {
-            "Формирует ответ"
-        }
-    } else if input().trim().is_empty() {
-        "Ожидает отправки"
-    } else {
-        "Готово к отправке"
-    };
-    let input_status_text = if generation_active() {
-        if generation_paused() {
-            "Генерация приостановлена. Нажмите кнопку воспроизведения для продолжения."
-                .to_string()
-        } else if is_thinking() {
-            thinking_preview(&thinking_text())
-                .unwrap_or_else(|| "Модель анализирует вопрос и собирает план ответа".to_string())
-        } else {
-            thinking_preview(&thinking_text())
-                .filter(|text| !text.is_empty())
-                .unwrap_or_else(|| "Модель оформляет финальный ответ".to_string())
-        }
-    } else if input().trim().is_empty() {
-        "Введите сообщение в поле ниже".to_string()
-    } else {
-        "Нажмите Enter или кнопку отправки".to_string()
-    };
-    let input_status_class = if generation_active() {
-        if generation_paused() {
-            "text-amber-300 bg-amber-400/10 border-amber-400/20"
-        } else if is_thinking() {
-            "text-cyan-300 bg-cyan-400/10 border-cyan-400/20"
-        } else {
-            "text-emerald-300 bg-emerald-400/10 border-emerald-400/20"
-        }
-    } else if input().trim().is_empty() {
-        "text-zinc-300 bg-zinc-700/40 border-zinc-500/30"
-    } else {
-        "text-cyan-300 bg-cyan-400/10 border-cyan-400/20"
-    };
-    let input_status_running = generation_active() && !generation_paused();
-
-    let input_box_class = if generation_active() {
-        "w-full min-h-[52px] max-h-[156px] resize-none overflow-y-hidden bg-zinc-950/80 rounded-xl px-3 py-2 text-sm leading-6 shadow-[0_0_0_1px_rgba(52,211,153,0.22),0_0_16px_rgba(16,185,129,0.2)]"
-    } else {
-        "w-full min-h-[52px] max-h-[156px] resize-none overflow-y-hidden bg-zinc-950/80 rounded-xl px-3 py-2 text-sm leading-6"
-    };
-
-    rsx! {
-        div {
-            class: "h-full w-full flex overflow-hidden bg-zinc-950 text-zinc-200",
-            onclick: move |_| {
-                context_menu.set(None);
-                create_menu_open.set(false);
-            },
-
-            // Sidebar
-            div { class: "w-56 border-r border-white/10 flex flex-col",
-                // Sidebar header
-                div { class: "p-2 flex flex-col gap-2",
-                    div { class: "relative flex flex-row justify-between items-center",
-                        div { class: "h-8 inline-flex items-center rounded-md border border-white/10 bg-zinc-900/70 overflow-hidden",
-                            button {
-                                class: "w-8 h-8 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer",
-                                title: "Новый диалог",
-                                onclick: {
-                                    let orch = orch.clone();
-                                    move |evt| {
-                                        evt.stop_propagation();
-                                        let reader = AiPrefsReader;
-                                        let provider = reader.provider().unwrap_or(ProviderKind::Ollama);
-                                        let model = model_for_provider(&reader, provider);
-                                        let mut conversation = Conversation::new("Новый диалог", provider, model);
-                                        if let Some(folder_id) = active_folder_id() {
-                                            conversation.folder_id = Some(folder_id);
-                                        }
-                                        if let Err(error) = ConversationStore.upsert(&conversation) {
-                                            orch.error(format!("Не удалось создать диалог: {error}"));
-                                            return;
-                                        }
-                                        selected_conversation_id.set(Some(conversation.id));
-                                        creating_folder.set(false);
-                                        create_menu_open.set(false);
-                                        reload_tick.set(reload_tick() + 1);
-                                    }
-                                },
-                                Icon { icon: HiChat, size: 14, color: "#e4e4e7" }
-                            }
-                            button {
-                                class: "w-8 h-8 border-l border-white/10 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer",
-                                title: "Меню создания",
-                                onclick: move |evt| {
-                                    evt.stop_propagation();
-                                    create_menu_open.set(!create_menu_open());
-                                },
-                                Icon { icon: LdList, size: 14 }
-                            }
-                        }
-                        if create_menu_open() {
-                            div {
-                                class: "absolute z-20 top-10 left-0 rounded-md border border-white/10 bg-zinc-950/98 shadow-xl flex flex-col items-start",
-                                onclick: move |evt| evt.stop_propagation(),
-                                button {
-                                    class: "w-full px-3 py-1.5 rounded hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between gap-2 text-sm",
-                                    title: "Новый диалог",
-                                    onclick: {
-                                        move |_| {
-                                            let reader = AiPrefsReader;
-                                            let provider = reader.provider().unwrap_or(ProviderKind::Ollama);
-                                            let model = model_for_provider(&reader, provider);
-                                            let mut conversation = Conversation::new("Новый диалог", provider, model);
-                                            if let Some(folder_id) = active_folder_id() {
-                                                conversation.folder_id = Some(folder_id);
-                                            }
-                                            if let Err(e) = ConversationStore.upsert(&conversation) {
-                                                tracing::error!(error = %e, "Failed to create conversation");
-                                                return;
-                                            }
-                                            selected_conversation_id.set(Some(conversation.id));
-                                            creating_folder.set(false);
-                                            create_menu_open.set(false);
-                                            reload_tick.set(reload_tick() + 1);
-                                        }
-                                    },
-                                    Icon { icon: HiChat, size: 14 }
-                                    "Новый диалог"
-                                }
-                                button {
-                                    class: "w-full px-3 py-1.5 rounded hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between gap-2 text-sm",
-                                    title: "Новая папка",
-                                    onclick: move |_| {
-                                        creating_folder.set(true);
-                                        create_menu_open.set(false);
-                                    },
-                                    Icon { icon: HiFolderAdd, size: 14 }
-                                    "Новая папка"
-                                }
-                            }
-                        }
-                        span { class: "pr-2 font-semibold text-lg", "Диалоги" }
-                    }
-
-                    if creating_folder() {
-                        div { class: "flex justify-stretch gap-1",
-                            input {
-                                class: "flex h-8 bg-black border border-white/10 rounded px-1 text-xs",
-                                placeholder: "Имя папки",
-                                value: "{new_folder_name}",
-                                oninput: move |e| new_folder_name.set(e.value())
-                            }
-                            button {
-                                class: "px-1 rounded hover:bg-white/15 transition-colors cursor-pointer",
-                                onclick: {
-                                    move |_| {
-                                        let name = new_folder_name().trim().to_string();
-                                        if name.is_empty() {
-                                            return;
-                                        }
-                                        let folder = Folder::new(name);
-                                        if let Err(e) = FolderStore.upsert(&folder) {
-                                            tracing::error!(error = %e, "Failed to create folder");
-                                            return;
-                                        }
-                                        creating_folder.set(false);
-                                        new_folder_name.set(String::new());
-                                        reload_tick.set(reload_tick() + 1);
-                                    }
-                                },
-                                Icon { icon: MdCreateNewFolder }
-                            }
-                        }
-                    }
-                }
-
-                // Sidebar content
-                div { class: "flex-1 overflow-y-auto",
-                    // Folders list
-                    div { class: "space-y-1.5 p-3",
-                        for folder in folders_list.iter() {
-                            div {
-                                class: "relative rounded-md border px-2 py-1.5 flex items-center {row_class(active_folder.as_deref() == Some(folder.id.as_str()))}",
-                                oncontextmenu: {
-                                    let folder_id = folder.id.clone();
-                                    move |evt| {
-                                        evt.prevent_default();
-                                        evt.stop_propagation();
-                                        context_menu.set(Some(ContextMenuTarget::Folder(folder_id.clone())));
-                                    }
-                                },
-                                button { 
-                                    class: "flex-1 text-left min-w-0 cursor-pointer",
-                                    onclick: {
-                                        let folder_id = folder.id.clone();
-                                        move |_| {
-                                            active_folder_id.set(Some(folder_id.clone()));
-                                            selected_conversation_id.set(None);
-                                        }
-                                    },
-                                    div { class: "flex flex-row items-center gap-5 text-sm text-zinc-100 truncate px-2 py-1.5", 
-                                        Icon { icon: HiFolder }
-                                        "{folder.name}" 
-                                    }
-                                }
-
-                                if context_menu().as_ref() == Some(&ContextMenuTarget::Folder(folder.id.clone())) {
-                                    div {
-                                        class: "absolute top-10 right-0 z-20 min-w-[132px] border border-white/10 bg-zinc-950 rounded-md shadow-xl",
-                                        button {
-                                            class: "flex flex-row items-center gap-2 w-full text-left px-2 py-1.5 rounded text-xs text-pink-300 hover:text-pink-200 hover:bg-pink-500/10 transition-colors cursor-pointer",
-                                            onclick: {
-                                                let folder_id = folder.id.clone();
-                                                move |evt| {
-                                                    evt.stop_propagation();
-                                                    if let Err(e) = FolderStore.remove(&folder_id) {
-                                                        tracing::error!(error = %e, "Failed to delete folder");
-                                                        return;
-                                                    }
-                                                    if active_folder_id().as_deref() == Some(folder_id.as_str()) {
-                                                        active_folder_id.set(None);
-                                                    }
-                                                    context_menu.set(None);
-                                                    reload_tick.set(reload_tick() + 1);
-                                                }
-                                            },
-                                            Icon { icon: HiFolderRemove, size: 14 }
-                                            "Удалить папку"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Conversations list
-                    div { class: "space-y-1.5 p-3",
-                        for conversation in chats_for_view.iter() {
-                            div {
-                                class: "relative rounded-md border px-2 py-1.5 {row_class(selected_conversation_id().as_deref() == Some(conversation.id.as_str()))}",
-                                oncontextmenu: {
-                                    let conversation_id = conversation.id.clone();
-                                    move |evt| {
-                                        evt.prevent_default();
-                                        evt.stop_propagation();
-                                        context_menu.set(Some(ContextMenuTarget::Conversation(conversation_id.clone())));
-                                    }
-                                },
-                                div { class: "flex items-start gap-2",
-                                    button {
-                                        class: "flex-1 text-left min-w-0 cursor-pointer",
-                                        onclick: {
-                                            let id = conversation.id.clone();
-                                            move |_| selected_conversation_id.set(Some(id.clone()))
-                                        },
-                                        div { class: "flex flex-row items-center gap-2 py-1.5 text-xs text-zinc-100 truncate", 
-                                            Icon { icon: MdChatBubble, size: 15 }
-                                            "{conversation.title}" 
-                                        }
-                                    }
-                                }
-
-                                if context_menu().as_ref() == Some(&ContextMenuTarget::Conversation(conversation.id.clone())) {
-                                    div {
-                                        class: "absolute top-8 right-0 z-20 min-w-[138px] border border-white/10 bg-zinc-950 rounded-md shadow-xl",
-                                        button {
-                                            class: "flex flex-row items-center gap-2 w-full text-left px-2 py-1.5 rounded text-xs text-pink-300 hover:text-pink-200 hover:bg-pink-500/10 transition-colors cursor-pointer",
-                                            onclick: {
-                                                let id = conversation.id.clone();
-                                                move |evt| {
-                                                    evt.stop_propagation();
-                                                    if let Err(e) = ConversationStore.remove(&id) {
-                                                        tracing::error!(error = %e, "Failed to delete dialog");
-                                                        return;
-                                                    }
-                                                    if selected_conversation_id().as_deref() == Some(id.as_str()) {
-                                                        selected_conversation_id.set(None);
-                                                    }
-                                                    context_menu.set(None);
-                                                    reload_tick.set(reload_tick() + 1);
-                                                }
-                                            },
-                                            Icon { icon: MdChatBubble, size: 14 }
-                                            "Удалить диалог"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Sidebar footer
-                if active_folder.is_some() {
-                    div { class: "p-2 border-t border-white/10",
-                        button {
-                            class: "w-full flex flex-row items-center gap-4 px-4 h-8 rounded-md text-lg hover:bg-white/5 transition-colors cursor-pointer",
-                            onclick: move |_| active_folder_id.set(None),
-                            Icon { icon: IoArrowBack }
-                            "Назад"
-                        }
-                    }
-                }
-            }
-
-            // Chat area
-            div { class: "flex-1 flex flex-col min-w-0",
-                // Chat header
-                div { class: "h-12 px-4 flex items-center",
-                    div { class: "flex-1" }
-                    div { class: "text-sm text-zinc-300 text-center truncate max-w-[70%]", "{title}" }
-                    div { class: "flex-1 flex justify-end",
-                        if generation_active() {
-                            div { class: "text-[11px] text-emerald-400 animate-pulse", "Генерация" }
-                        }
-                    }
-                }
-
-                // Chat messages area
-                div { class: "flex-1 overflow-y-auto p-5 space-y-3",
-                    if messages().is_empty() && stream_text().is_empty() {
-                        div { class: "text-sm text-zinc-500", "Пока нет сообщений" }
-                    }
-
-                    for message in messages().iter() {
-                        MessageView { message: message.clone() }
-                    }
-
-                    if generation_active() {
-                        div { class: "max-w-[85%] mr-auto rounded-xl border border-cyan-500/20 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]",
-                            div { class: "mb-2 text-[10px] uppercase tracking-wider text-cyan-400 font-semibold", "Ассистент" }
-                            div { class: "prose prose-invert prose-sm max-w-none",
-                                MarkdownMessage { content: if stream_text().is_empty() { "…".to_string() } else { stream_text() } }
-                            }
-                        }
-                    }
-                }
-
-                // Chat input area
-                div { class: "p-3",
-                    div { class: "rounded-2xl border border-white/10 bg-zinc-900/55 p-3 flex flex-col gap-3 shadow-[0_16px_32px_rgba(0,0,0,0.25)]",
-                        ThinkingBanner {
-                            status: input_status,
-                            status_class: input_status_class,
-                            text: input_status_text,
-                            running: input_status_running,
-                        }
-
-                        textarea {
-                            id: "chat-input-textarea",
-                            class: "{input_box_class}",
-                            style: "height: 52px;",
-                            placeholder: "Напишите сообщение...",
-                            rows: "2",
-                            value: "{input}",
-                            oninput: move |e| input.set(e.value()),
-                            onkeydown: {
-                            let orch = orch.clone();
-                            let manager = manager.clone();
-                            move |evt| {
-                                let key = evt.key().to_string();
-                                let modifiers = evt.data().modifiers();
-                                let shift_pressed = modifiers.contains(dioxus::html::Modifiers::SHIFT);
-                                let ctrl_pressed = modifiers.contains(dioxus::html::Modifiers::CONTROL)
-                                    || modifiers.contains(dioxus::html::Modifiers::META);
-
-                                if key == "Enter" && !generation_active() && (shift_pressed || ctrl_pressed) {
-                                    evt.prevent_default();
-                                    let current = input();
-                                    input.set(format!("{current}\n"));
-                                    return;
-                                }
-
-                                if key == "Enter" && !generation_active() && !shift_pressed && !ctrl_pressed {
-                                    evt.prevent_default();
-                                    let prompt = input().trim().to_string();
-                                    if prompt.is_empty() {
-                                        return;
-                                    }
-
-                                    let manager = manager.clone();
-                                    let selected = selected_conversation_id();
-                                    let mut selected_conversation_id = selected_conversation_id;
-                                    let mut generation_active = generation_active;
-                                    let mut generation_paused = generation_paused;
-                                    let mut is_thinking = is_thinking;
-                                    let mut thinking_text = thinking_text;
-                                    let mut input = input;
-                                    let mut reload_tick = reload_tick;
-                                    let mut stream_text = stream_text;
-                                    let orch_for_task = orch.clone();
-                                    let active_folder = active_folder_id();
-
-                                    spawn(async move {
-                                        let reader = AiPrefsReader;
-                                        let provider_cfg = match provider_config(&reader) {
-                                            Ok(cfg) => cfg,
-                                            Err(e) => {
-                                                tracing::error!(error = %e, "Failed to get provider config");
-                                                return;
-                                            }
-                                        };
-
-                                        let model = model_for_provider(&reader, provider_cfg.kind());
-
-                                        let conversation_id = if let Some(id) = selected {
-                                            id
-                                        } else {
-                                            let mut conversation = Conversation::new(
-                                                conversation_title_from_prompt(&prompt),
-                                                provider_cfg.kind(),
-                                                model.clone(),
-                                            );
-                                            conversation.folder_id = active_folder;
-                                            let id = conversation.id.clone();
-                                            if let Err(e) = ConversationStore.upsert(&conversation) {
-                                                tracing::error!(error = %e, "Failed to create conversation");
-                                                orch_for_task.error(format!("Не удалось создать диалог: {e}"));
-                                                return;
-                                            }
-                                            selected_conversation_id.set(Some(id.clone()));
-                                            id
-                                        };
-
-                                        if let Err(e) = manager
-                                            .start(
-                                                conversation_id,
-                                                provider_cfg,
-                                                model,
-                                                orch_for_task.ai_tools(),
-                                                prompt,
-                                            )
-                                            .await
-                                        {
-                                            tracing::error!(error = %e, "Failed to start generation");
-                                            orch_for_task.error(format!("Не удалось запустить генерацию: {e}"));
-                                            return;
-                                        }
-
-                                        input.set(String::new());
-                                        stream_text.set(String::new());
-                                        thinking_text.set(String::new());
-                                        is_thinking.set(false);
-                                        generation_paused.set(false);
-                                        generation_active.set(true);
-                                        reload_tick.set(reload_tick() + 1);
-                                    });
-                                    return;
-                                }
-
-                                if (key == " " || key == "Space") && generation_active() {
-                                    evt.prevent_default();
-                                    if let Some(id) = selected_conversation_id() {
-                                        let manager = manager.clone();
-                                        let mut generation_paused = generation_paused;
-                                        spawn(async move {
-                                            if generation_paused() {
-                                                let _ = manager.resume(&id).await;
-                                                generation_paused.set(false);
-                                            } else {
-                                                let _ = manager.pause(&id).await;
-                                                generation_paused.set(true);
-                                            }
-                                        });
-                                    }
-                                    return;
-                                }
-
-                                if key == "Escape" && generation_active() {
-                                    evt.prevent_default();
-                                    if let Some(id) = selected_conversation_id() {
-                                        let manager = manager.clone();
-                                        let mut generation_active = generation_active;
-                                        let mut generation_paused = generation_paused;
-                                        let mut is_thinking = is_thinking;
-                                        let mut thinking_text = thinking_text;
-                                        let mut reload_tick = reload_tick;
-                                        spawn(async move {
-                                            let _ = manager.stop(&id).await;
-                                            thinking_text.set(String::new());
-                                            is_thinking.set(false);
-                                            generation_paused.set(false);
-                                            generation_active.set(false);
-                                            reload_tick.set(reload_tick() + 1);
-                                        });
-                                    }
-                                }
-                            }
-                            }
-                        }
-
-                        div { class: "flex items-center justify-end gap-1.5",
-                            button {
-                                class: "h-8 w-8 rounded-md bg-white/10 hover:bg-white/15 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center",
-                                disabled: !generation_active(),
-                                title: if generation_paused() { "Возобновить" } else { "Пауза" },
-                                onclick: {
-                                    let manager = manager.clone();
-                                    move |_| {
-                                        if let Some(id) = selected_conversation_id() {
-                                            let manager = manager.clone();
-                                            let mut generation_paused = generation_paused;
-                                            spawn(async move {
-                                                if generation_paused() {
-                                                    let _ = manager.resume(&id).await;
-                                                    generation_paused.set(false);
-                                                } else {
-                                                    let _ = manager.pause(&id).await;
-                                                    generation_paused.set(true);
-                                                }
-                                            });
-                                        }
-                                    }
-                                },
-                                if generation_paused() {
-                                    Icon { icon: MdPlayArrow, size: 16 }
-                                } else {
-                                    Icon { icon: MdPause, size: 16 }
-                                }
-                            }
-
-                            if generation_active() {
-                                button {
-                                    class: "h-8 w-8 rounded-md bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors cursor-pointer flex items-center justify-center",
-                                    title: "Остановить",
-                                    onclick: {
-                                        let manager = manager.clone();
-                                        move |_| {
-                                            if let Some(id) = selected_conversation_id() {
-                                                let manager = manager.clone();
-                                                let mut generation_active = generation_active;
-                                                let mut generation_paused = generation_paused;
-                                                let mut reload_tick = reload_tick;
-                                                spawn(async move {
-                                                    let _ = manager.stop(&id).await;
-                                                    generation_paused.set(false);
-                                                    generation_active.set(false);
-                                                    reload_tick.set(reload_tick() + 1);
-                                                });
-                                            }
-                                        }
-                                    },
-                                    Icon { icon: MdStop, size: 16, color: "#fca5a5" }
-                                }
-                            } else {
-                                button {
-                                    class: "h-8 w-8 rounded-md bg-zinc-100 text-zinc-900 hover:bg-white transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center",
-                                    disabled: input().trim().is_empty(),
-                                    title: "Отправить",
-                                    onclick: {
-                                        let orch = orch.clone();
-                                        let manager = manager.clone();
-                                        move |_| {
-                                            let prompt = input().trim().to_string();
-                                            if prompt.is_empty() {
-                                                return;
-                                            }
-
-                                            let manager = manager.clone();
-                                            let selected = selected_conversation_id();
-                                            let mut selected_conversation_id = selected_conversation_id;
-                                            let mut generation_active = generation_active;
-                                            let mut generation_paused = generation_paused;
-                                            let mut is_thinking = is_thinking;
-                                            let mut thinking_text = thinking_text;
-                                            let mut input = input;
-                                            let mut reload_tick = reload_tick;
-                                            let mut stream_text = stream_text;
-                                            let orch_for_task = orch.clone();
-                                            let active_folder = active_folder_id();
-
-                                            spawn(async move {
-                                                let reader = AiPrefsReader;
-                                                let provider_cfg = match provider_config(&reader) {
-                                                    Ok(cfg) => cfg,
-                                                    Err(e) => {
-                                                        tracing::error!(error = %e, "Failed to get provider config");
-                                                        return;
-                                                    }
-                                                };
-
-                                                let model = model_for_provider(&reader, provider_cfg.kind());
-
-                                                let conversation_id = if let Some(id) = selected {
-                                                    id
-                                                } else {
-                                                    let mut conversation = Conversation::new(
-                                                        conversation_title_from_prompt(&prompt),
-                                                        provider_cfg.kind(),
-                                                        model.clone(),
-                                                    );
-                                                    conversation.folder_id = active_folder;
-                                                    let id = conversation.id.clone();
-                                                    if let Err(e) = ConversationStore.upsert(&conversation) {
-                                                        tracing::error!(error = %e, "Failed to create conversation");
-                                                        return;
-                                                    }
-                                                    selected_conversation_id.set(Some(id.clone()));
-                                                    id
-                                                };
-
-                                                if let Err(e) = manager
-                                                    .start(
-                                                        conversation_id,
-                                                        provider_cfg,
-                                                        model,
-                                                        orch_for_task.ai_tools(),
-                                                        prompt,
-                                                    )
-                                                    .await
-                                                {
-                                                    tracing::error!(error = %e, "Failed to start generation");
-                                                    return;
-                                                }
-
-                                                input.set(String::new());
-                                                stream_text.set(String::new());
-                                                thinking_text.set(String::new());
-                                                is_thinking.set(false);
-                                                generation_paused.set(false);
-                                                generation_active.set(true);
-                                                reload_tick.set(reload_tick() + 1);
-                                            });
-                                        }
-                                    },
-                                    Icon { icon: MdSend, size: 16, color: "#111827" }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn ThinkingBanner(
-    status: &'static str,
-    status_class: &'static str,
-    text: String,
-    running: bool,
-) -> Element {
-    rsx! {
-        div { class: "w-full rounded-xl bg-zinc-900/80 px-3 py-2 flex items-center gap-3",
-            if running {
-                div { class: "w-4 h-4 rounded-full border-2 border-zinc-600 border-t-cyan-400 animate-spin shrink-0" }
+    let orch_for_delete = orch.clone();
+    let mut handle_delete_conversation = move |conversation_id: String| {
+        if let Err(err) = ConversationStore.remove(&conversation_id) {
+                orch_for_delete.error(format!("Не удалось удалить диалог: {err}"));
             } else {
-                div { class: "w-2.5 h-2.5 rounded-full bg-zinc-500 shrink-0" }
-            }
-            div { class: "min-w-0 flex-1 flex items-center gap-3",
-                div { class: "shrink-0 px-2 py-1 rounded-full border text-[10px] font-semibold uppercase tracking-[0.12em] {status_class}",
-                    "{status}"
+                if selected_conversation_id().as_deref() == Some(conversation_id.as_str()) {
+                    selected_conversation_id.set(None);
+                    generation_active.set(false);
+                    is_thinking.set(false);
+                    stream_text.set(String::new());
                 }
-                div { class: "text-sm text-zinc-300 truncate", "{text}" }
+                reload_tick.write();
+            }
+    };
+
+    // Оптимистичная отправка сообщения.
+    let mounted_for_send = mounted.clone();
+    let handle_send: Rc<RefCell<dyn FnMut()>> = Rc::new(RefCell::new(move || {
+        let prompt = input_text();
+        if prompt.trim().is_empty() {
+            return;
+        }
+
+        let conv_id = match selected_conversation_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let prefs = AiPrefsReader;
+        let provider = prefs.effective_provider(ProviderKind::Ollama);
+        let model = prefs.effective_model(provider, Some("llama3.1"));
+
+        if let Some(conv) = ConversationStore.find(&conv_id).ok().flatten() {
+            let mut conv = conv;
+            conv.provider = provider;
+            conv.model = model.clone();
+            let _ = ConversationStore.upsert(&conv);
+        }
+
+        // 1. Мгновенно очищаем инпут и включаем статусы ожидания
+        input_text.set(String::new());
+        generation_active.set(true);
+        is_thinking.set(true);
+        stream_text.set(String::new());
+
+        // 2. Мгновенно сохраняем сообщение пользователя локально
+        let user_msg = Message::user(prompt.clone());
+        if let Err(e) = MessageStore.append(&conv_id, &user_msg) {
+            orch.error(format!("Не удалось сохранить сообщение: {e}"));
+            return;
+        }
+
+        reload_tick.write();
+
+        if let Some(conv) = ConversationStore.find(&conv_id).ok().flatten() {
+            let should_title = conv.title == "Новый чат";
+            if should_title {
+                let title_config = provider_config();
+                let title_model = model.clone();
+                let title_prompt = prompt.clone();
+                let title_conv_id = conv_id.clone();
+                let title_store = ConversationStore;
+                let title_messages = MessageStore;
+                spawn(async move {
+                    let manager = consume_context::<Arc<GenerationManager>>();
+                    let _ = manager;
+                    let title_result = ai::generate_title(&title_config, &title_model, &title_prompt).await;
+                    if let Ok(title) = title_result
+                        && let Ok(Some(mut conv)) = title_store.find(&title_conv_id)
+                        && conv.title == "Новый чат" {
+                            conv.title = title;
+                            conv.updated_at = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64;
+                            let _ = title_store.upsert(&conv);
+                        }
+                    
+                    
+                    if let Ok(msgs) = title_messages.list(&title_conv_id)
+                        && msgs.iter().filter(|msg| msg.role == Role::User).count() > 1 
+                        && let Ok(Some(mut conv)) = title_store.find(&title_conv_id) 
+                        && (conv.title == "Новый чат" || conv.title == "...") {
+                            conv.updated_at = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64;
+                            let _ = title_store.upsert(&conv);
+                        }
+                            
+                        
+                    
+                });
             }
         }
-    }
-}
 
-#[component]
-fn MessageView(message: Message) -> Element {
-    let bubble_class = match message.role {
-        Role::User => "ml-auto bg-cyan-500/10 border border-cyan-500/40 text-zinc-100",
-        Role::Assistant => "mr-auto text-zinc-100",
-        Role::Tool => {
-            "mr-auto bg-violet-500/5 border border-violet-500/20 text-violet-200"
-        },
-        Role::System => {
-            "mr-auto bg-amber-500/5 border border-amber-500/20 text-amber-100"
-        },
-    };
-
-    let reader = AiPrefsReader;
-    let provider = reader.provider().unwrap_or(ProviderKind::Ollama);
-    let model_name = model_for_provider(&reader, provider);
-
-    rsx! {
-        div { class: "max-w-[85%] rounded-xl px-6 py-3 text-sm {bubble_class}",
-            if message.role == Role::User {
-                div { class: "text-[10px] uppercase tracking-wider text-cyan-400 mb-2 font-semibold", "Вы" }
-            } else if message.role == Role::Assistant {
-                div { class: "text-[10px] uppercase tracking-wider text-zinc-500 mb-2 font-semibold", "Ассистент / {model_name}" }
-            } else if message.role == Role::System {
-                div { class: "text-[10px] uppercase tracking-wider text-amber-400 mb-2 font-semibold", "Система / {model_name}" }
-            } else if message.role == Role::Tool {
-                div { class: "text-[10px] uppercase tracking-wider text-violet-400 mb-2 font-semibold", "Инструмент / {model_name}" }
+        // 3. Запускаем фоновую генерацию
+        let config_cl = provider_config();
+        let sys_prompt_cl = String::new();
+        let model_cl = model;
+        let request = ai::GenerationRequest {
+            config: config_cl,
+            model: model_cl,
+            system_prompt: sys_prompt_cl,
+            tools: vec![],
+        };
+        let mounted_for_spawn = mounted_for_send.clone();
+        spawn(async move {
+            let manager_cl = consume_context::<Arc<GenerationManager>>();
+            if !mounted_for_spawn.load(Ordering::SeqCst) {
+                return;
             }
 
-            if message.role == Role::Tool {
-                ToolMessageContent { message: message.clone() }
-            } else {
-                MarkdownMessage { content: message.content.clone() }
-            }
-        }
-    }
-}
-
-#[component]
-fn ToolMessageContent(message: Message) -> Element {
-    let (tool_name, event_kind, details) = tool_display_data(&message);
-    let has_details = !details.is_empty();
-
-    let badge_class = if event_kind == "result" {
-        "bg-fuchsia-500/15 border border-fuchsia-400/30 text-fuchsia-200"
-    } else {
-        "bg-sky-500/10 border border-sky-400/25 text-sky-200"
-    };
-    let badge_label = if event_kind == "result" {
-        "результат"
-    } else {
-        "вызов"
-    };
-
-    rsx! {
-        div { class: "relative group",
-            div { class: "inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 {badge_class}",
-                span { class: "text-sm", if event_kind == "result" { "◉" } else { "⚙" } }
-                span { class: "font-mono text-[11px] uppercase tracking-[0.16em]", "{badge_label}" }
-                span { class: "font-mono text-xs text-zinc-100", "{tool_name}" }
+            if let Err(err) = manager_cl
+                .start(
+                    conv_id.clone(),
+                    Arc::new(MessageStore),
+                    Arc::new(ConversationStore),
+                    request,
+                )
+                .await
+            {
+                tracing::error!("Ошибка запуска генерации: {err}");
+                if mounted_for_spawn.load(Ordering::SeqCst) {
+                    generation_active.set(false);
+                    is_thinking.set(false);
+                    stream_text.set(String::new());
+                }
+                return;
             }
 
-            if has_details {
-                div { class: "pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 hidden min-w-[300px] max-w-[520px] group-hover:block",
-                    div { class: "rounded-xl border border-violet-400/30 bg-zinc-950/95 px-2 py-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)]",
-                        table { class: "w-full text-xs border-separate border-spacing-y-1",
-                            tbody {
-                                for (key, value) in details.iter() {
-                                    tr {
-                                        td { class: "align-top pr-3 text-violet-300/90 font-mono whitespace-nowrap", "{key}" }
-                                        td { class: "align-top text-zinc-200 break-all", "{value}" }
-                                    }
-                                }
-                            }
+            if let Some(mut rx) = manager_cl.subscribe(&conv_id).await {
+                let initial_snapshot = rx.borrow().clone();
+                if mounted_for_spawn.load(Ordering::SeqCst) {
+                    if !initial_snapshot.text.is_empty() {
+                        is_thinking.set(false);
+                        stream_text.set(initial_snapshot.text.clone());
+                    } else if !initial_snapshot.thinking.is_empty() {
+                        is_thinking.set(true);
+                    }
+
+                    if initial_snapshot.finished {
+                        generation_active.set(false);
+                        is_thinking.set(false);
+                        stream_text.set(String::new());
+                        reload_tick.write();
+                        return;
+                    }
+                }
+
+                loop {
+                    if !mounted_for_spawn.load(Ordering::SeqCst) || selected_conversation_id() != Some(conv_id.clone()) {
+                        break;
+                    }
+
+                    if rx.changed().await.is_err() {
+                        break;
+                    }
+
+                    let snapshot = rx.borrow().clone();
+                    if mounted_for_spawn.load(Ordering::SeqCst) {
+                        if !snapshot.text.is_empty() {
+                            is_thinking.set(false);
+                            stream_text.set(snapshot.text);
+                        } else if !snapshot.thinking.is_empty() {
+                            is_thinking.set(true);
+                        }
+
+                        if snapshot.finished {
+                            generation_active.set(false);
+                            is_thinking.set(false);
+                            stream_text.set(String::new());
+                            reload_tick.write();
+                            break;
                         }
                     }
                 }
+            } else if mounted_for_spawn.load(Ordering::SeqCst) {
+                generation_active.set(false);
+            }
+        });
+    }));
+
+    let handle_stop: Rc<RefCell<dyn FnMut()>> = Rc::new(RefCell::new(move || {
+        if let Some(conv_id) = selected_conversation_id() {
+            spawn(async move {
+                let manager_cl = consume_context::<Arc<GenerationManager>>();
+                let _ = manager_cl.stop(&conv_id).await;
+            });
+        }
+    }));
+
+    let handle_send_for_button = Rc::clone(&handle_send);
+    let handle_stop_for_button = Rc::clone(&handle_stop);
+
+    rsx! {
+        div { class: "flex h-full w-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden",
+            // Боковая панель теперь вынесена в отдельный компонент для лучшей читаемости.
+            sidebar::ChatSidebar {
+                conversations: conversations(),
+                selected_conversation_id: selected_conversation_id(),
+                on_select_conversation: move |conversation_id| {
+                    handle_select_conversation(conversation_id);
+                },
+                on_create_conversation: move |_| {
+                    handle_create_conversation();
+                },
+                on_delete_conversation: move |conversation_id| {
+                    handle_delete_conversation(conversation_id);
+                },
+            }
+
+            // Основная область чата теперь тоже разбита на небольшие смысловые блоки.
+            div { class: "flex flex-1 flex-col h-full bg-zinc-950 relative",
+                if let Some(conv) = selected_conversation() {
+                    chat_area::ChatHeader {
+                        conversation: conv.clone(),
+                        is_thinking: is_thinking(),
+                        generation_active: generation_active(),
+                    }
+
+                    chat_area::MessageList {
+                        messages: current_messages(),
+                        stream_text: stream_text(),
+                        generation_active: generation_active(),
+                    }
+
+                    chat_area::ChatComposer {
+                        input_text: input_text(),
+                        generation_active: generation_active(),
+                        on_input: move |value| input_text.set(value),
+                        on_submit: move |_| {
+                            handle_send_for_button.borrow_mut()();
+                        },
+                        on_stop: move |_| {
+                            handle_stop_for_button.borrow_mut()();
+                        },
+                    }
+                } else {
+                    chat_area::EmptyChatState {}
+                }
             }
         }
     }
 }
+
