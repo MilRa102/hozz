@@ -26,6 +26,8 @@ pub(crate) struct ResponseControl<R>(pub Arc<Mutex<StreamingCompletionResponse<R
 where
     R: Clone + Unpin + GetTokenUsage;
 
+pub(crate) struct NoopStreamControl;
+
 #[async_trait::async_trait]
 impl<R> StreamControl for ResponseControl<R>
 where
@@ -45,6 +47,11 @@ where
             }
         }
     }
+}
+
+#[async_trait::async_trait]
+impl StreamControl for NoopStreamControl {
+    async fn apply(&self, _command: StreamCommand) {}
 }
 
 #[cfg(test)]

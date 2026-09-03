@@ -4,7 +4,8 @@ use std::{
 };
 
 use futures::StreamExt;
-use rig::{completion::Message as RigMessage};
+use rig::{completion::Message as RigMessage, tool::server::ToolServerHandle};
+use serde_json::json;
 use tokio::sync::{broadcast, Mutex, watch};
 
 use crate::{
@@ -151,6 +152,8 @@ impl GenerationManager {
                 &request.model,
                 request.system_prompt,
                 history,
+                request.tools,
+                request.max_tool_turns,
             ).await;
 
             let (mut events, control) = match stream_result {
@@ -217,8 +220,24 @@ impl GenerationManager {
                                 let _ = snapshot_tx.send(snapshot.clone());
                                 let _ = event_tx_for_task.send(GenerationEvent::Thinking(reasoning));
                             }
-                            Some(ChatEvent::ToolCallStarted { .. }) => {}
-                            Some(ChatEvent::ToolResultReceived { .. }) => {}
+                            Some(ChatEvent::ToolCallStarted { name, arguments }) => {
+                                let raw = json!({
+                                    "function": {
+                                        "name": name,
+                                        "arguments": arguments,
+                                    }
+                                }).to_string();
+                                let msg = Message::new(Role::Tool, format!("Tool: {name}"), raw);
+                                let _ = history_store.append(&conv_id, &msg);
+                            }
+                            Some(ChatEvent::ToolResultReceived { name, payload }) => {
+                                let raw = json!({
+                                    "name": name,
+                                    "result": payload,
+                                }).to_string();
+                                let msg = Message::new(Role::Tool, format!("Tool result: {name}"), raw);
+                                let _ = history_store.append(&conv_id, &msg);
+                            }
                             Some(ChatEvent::Done { text, raw }) => {
                                 snapshot.text = text.clone();
                                 last_raw = raw;
@@ -269,6 +288,8 @@ pub struct GenerationRequest {
     pub config: ProviderConfig,
     pub model: String,
     pub system_prompt: String,
+    pub tools: Option<ToolServerHandle>,
+    pub max_tool_turns: usize,
 }
 
 /// Rehydrates a persisted [`Message`] back into a `rig_core` message for
@@ -336,5 +357,17 @@ mod tests {
     async fn manager_control_methods_return_false_when_no_generation_exists() {
         let manager = GenerationManager::new();
         assert!(!manager.stop("missing").await);
+    }
+
+    #[test]
+    fn tool_event_payloads_are_json_serializable() {
+        let event = serde_json::json!({
+            "function": {
+                "name": "proxy_status",
+                "arguments": {}
+            }
+        });
+        let raw = serde_json::to_string(&event).unwrap_or_default();
+        assert!(raw.contains("proxy_status"));
     }
 }

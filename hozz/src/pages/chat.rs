@@ -16,7 +16,10 @@ use ai::{
     GenerationManager, Message, MessageStore, ProviderConfig, ProviderKind, Role,
 };
 use dioxus::{document::eval, logger::tracing};
-use shared::apps::{LoggingLayer, Orchestrator};
+use shared::{
+    ai::AiRegistry,
+    apps::{LoggingLayer, Orchestrator},
+};
 
 use crate::{components::message::MarkdownMessage};
 
@@ -628,6 +631,8 @@ pub fn ChatPage() -> Element {
             config: config_cl,
             model: model_cl,
             system_prompt: sys_prompt_cl,
+            tools: Some(orch.tool_server()),
+            max_tool_turns: 4,
         };
         let mounted_for_spawn = mounted_for_send.clone();
         spawn(async move {

@@ -50,6 +50,8 @@ pub async fn generate_title(config: &ProviderConfig, model: &str, prompt: &str) 
         model,
         instruction,
         history,
+        None,
+        1,
     )
     .await;
 
