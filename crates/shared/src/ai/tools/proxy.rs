@@ -2,12 +2,8 @@ use std::sync::Arc;
 
 use rig::tool::Tool;
 
-use crate::apps::{
-    Orchestrator,
-    proxy::CoreController,
-};
-
 use super::common::{AiToolError, EmptyArgs, ProxyStatusOutput, ToggleProxyArgs};
+use crate::apps::{Orchestrator, proxy::CoreController};
 
 #[derive(Clone)]
 pub struct ProxyStatusTool {

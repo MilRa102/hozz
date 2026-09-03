@@ -10,7 +10,9 @@ pub enum BadgeVariant {
     #[default]
     Primary,
     Secondary,
+    #[allow(dead_code)]
     Destructive,
+    #[allow(dead_code)]
     Outline,
 }
 

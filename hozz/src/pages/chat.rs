@@ -1,4 +1,3 @@
-use dioxus::prelude::*;
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -7,23 +6,29 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use dioxus_icons::lucide::{Trash2, MessageCircle, Menu, ReceiptText, Loader, CircleStop, Send};
-use crate::components::dropdown_menu::{DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger};
-use strum::IntoEnumIterator;
 
 use ai::{
-    AiPrefsReader, Conversation, ConversationStore,
-    GenerationManager, Message, MessageStore, ProviderConfig, ProviderKind, Role,
+    AiPrefsReader, Conversation, ConversationStore, GenerationManager, Message,
+    MessageStore, ProviderConfig, ProviderKind, Role,
 };
-use dioxus::{document::eval, logger::tracing};
+use dioxus::{document::eval, logger::tracing, prelude::*};
+use dioxus_icons::lucide::{
+    CircleStop, Loader, Menu, MessageCircle, ReceiptText, Send, Trash2,
+};
 use shared::{
     ai::AiRegistry,
     apps::{LoggingLayer, Orchestrator},
 };
+use strum::{Display, EnumIter, IntoEnumIterator};
 
-use crate::{components::message::MarkdownMessage};
+use crate::components::{
+    dropdown_menu::{
+        DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+    },
+    message::MarkdownMessage,
+};
 
-#[derive(Clone, Copy, strum_macros::Display, strum_macros::EnumIter, PartialEq)]
+#[derive(Clone, Copy, Display, EnumIter, PartialEq)]
 enum MenuOperation {
     #[strum(to_string = "Удалить")]
     Delete,
@@ -32,7 +37,10 @@ enum MenuOperation {
 impl MenuOperation {
     fn into_icon(self) -> Element {
         match self {
-            MenuOperation::Delete => rsx!(Trash2 { size: "13px", style: "color: #ff7777;" }),
+            MenuOperation::Delete => rsx!(Trash2 {
+                size: "13px",
+                style: "color: #ff7777;"
+            }),
         }
     }
 }
@@ -51,31 +59,28 @@ fn value_to_text(value: &serde_json::Value) -> String {
 }
 
 /// Извлекает название tool и его аргументы из raw/content payload, которые приходят от генератора.
-fn extract_tool_details(
-    raw: &str,
-    content: &str,
-) -> (String, Vec<(String, String)>) {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(raw) 
-        && let Some(function) = val.get("function") {
-            let name = function
-                .get("name")
-                .and_then(|n| n.as_str())
-                .unwrap_or("tool")
-                .to_string();
+fn extract_tool_details(raw: &str, content: &str) -> (String, Vec<(String, String)>) {
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(raw)
+        && let Some(function) = val.get("function")
+    {
+        let name = function
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("tool")
+            .to_string();
 
-            let mut details = Vec::new();
-            if let Some(args) = function.get("arguments") {
-                if let Some(obj) = args.as_object() {
-                    for (k, v) in obj {
-                        details.push((k.clone(), value_to_text(v)));
-                    }
-                } else {
-                    details.push(("arguments".to_string(), value_to_text(args)));
+        let mut details = Vec::new();
+        if let Some(args) = function.get("arguments") {
+            if let Some(obj) = args.as_object() {
+                for (k, v) in obj {
+                    details.push((k.clone(), value_to_text(v)));
                 }
+            } else {
+                details.push(("arguments".to_string(), value_to_text(args)));
             }
-            return (name, details);
         }
-    
+        return (name, details);
+    }
 
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
         let name = val
@@ -96,7 +101,10 @@ fn extract_tool_details(
         return (name, details);
     }
 
-    ("tool".to_string(), vec![("payload".to_string(), content.to_string())])
+    (
+        "tool".to_string(),
+        vec![("payload".to_string(), content.to_string())],
+    )
 }
 
 /// Возвращает цветовую схему для бейджа провайдера в списке диалогов.
@@ -218,9 +226,8 @@ mod sidebar {
 }
 
 mod chat_area {
+    use super::*;
     use crate::components::badge::{Badge, BadgeVariant};
-
-use super::*;
 
     /// Шапка чата с названием, моделью и статусом генерации.
     #[component]
@@ -360,18 +367,23 @@ use super::*;
     }
 
     #[component]
-    pub(super) fn BadgeThinking(
-        is_thinking: bool,
-        generation_active: bool,
-    ) -> Element {
+    pub(super) fn BadgeThinking(is_thinking: bool, generation_active: bool) -> Element {
         if !generation_active {
             return rsx! {};
         }
 
         let (bg_color, icon, text) = if is_thinking {
-            ("#47568f", rsx!(Loader { size: "13px" }), "Размышляет")
+            (
+                "#47568f",
+                rsx!(Loader { size: "13px" }),
+                "Размышляет",
+            )
         } else {
-            ("#5c3d76", rsx!(ReceiptText { size: "13px" }), "Отвечает")
+            (
+                "#5c3d76",
+                rsx!(ReceiptText { size: "13px" }),
+                "Отвечает",
+            )
         };
 
         rsx! {
@@ -386,7 +398,11 @@ use super::*;
 
     #[component]
     pub(super) fn tool_message_content(msg: Message) -> Element {
-        let raw_meta = if msg.raw.trim().is_empty() { "{}" } else { &msg.raw };
+        let raw_meta = if msg.raw.trim().is_empty() {
+            "{}"
+        } else {
+            &msg.raw
+        };
         let event_kind = if raw_meta.contains("\"function\"") {
             "call"
         } else {
@@ -457,7 +473,8 @@ pub fn ChatPage() -> Element {
 
     let selected_conversation = use_memo(move || {
         let _ = reload_tick();
-        selected_conversation_id().and_then(|id| ConversationStore.find(&id).ok().flatten())
+        selected_conversation_id()
+            .and_then(|id| ConversationStore.find(&id).ok().flatten())
     });
 
     let current_messages = use_memo(move || {
@@ -530,16 +547,16 @@ pub fn ChatPage() -> Element {
     let orch_for_delete = orch.clone();
     let mut handle_delete_conversation = move |conversation_id: String| {
         if let Err(err) = ConversationStore.remove(&conversation_id) {
-                orch_for_delete.error(format!("Не удалось удалить диалог: {err}"));
-            } else {
-                if selected_conversation_id().as_deref() == Some(conversation_id.as_str()) {
-                    selected_conversation_id.set(None);
-                    generation_active.set(false);
-                    is_thinking.set(false);
-                    stream_text.set(String::new());
-                }
-                reload_tick.write();
+            orch_for_delete.error(format!("Не удалось удалить диалог: {err}"));
+        } else {
+            if selected_conversation_id().as_deref() == Some(conversation_id.as_str()) {
+                selected_conversation_id.set(None);
+                generation_active.set(false);
+                is_thinking.set(false);
+                stream_text.set(String::new());
             }
+            reload_tick.write();
+        }
     };
 
     // Оптимистичная отправка сообщения.
@@ -593,32 +610,36 @@ pub fn ChatPage() -> Element {
                 spawn(async move {
                     let manager = consume_context::<Arc<GenerationManager>>();
                     let _ = manager;
-                    let title_result = ai::generate_title(&title_config, &title_model, &title_prompt).await;
+                    let title_result =
+                        ai::generate_title(&title_config, &title_model, &title_prompt)
+                            .await;
                     if let Ok(title) = title_result
                         && let Ok(Some(mut conv)) = title_store.find(&title_conv_id)
-                        && conv.title == "Новый чат" {
-                            conv.title = title;
-                            conv.updated_at = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as i64;
-                            let _ = title_store.upsert(&conv);
-                        }
-                    
-                    
+                        && conv.title == "Новый чат"
+                    {
+                        conv.title = title;
+                        conv.updated_at = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64;
+                        let _ = title_store.upsert(&conv);
+                    }
+
                     if let Ok(msgs) = title_messages.list(&title_conv_id)
-                        && msgs.iter().filter(|msg| msg.role == Role::User).count() > 1 
-                        && let Ok(Some(mut conv)) = title_store.find(&title_conv_id) 
-                        && (conv.title == "Новый чат" || conv.title == "...") {
-                            conv.updated_at = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as i64;
-                            let _ = title_store.upsert(&conv);
-                        }
-                            
-                        
-                    
+                        && msgs
+                            .iter()
+                            .filter(|msg| msg.role == Role::User)
+                            .count()
+                            > 1
+                        && let Ok(Some(mut conv)) = title_store.find(&title_conv_id)
+                        && (conv.title == "Новый чат" || conv.title == "...")
+                    {
+                        conv.updated_at = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64;
+                        let _ = title_store.upsert(&conv);
+                    }
                 });
             }
         }
@@ -679,7 +700,9 @@ pub fn ChatPage() -> Element {
                 }
 
                 loop {
-                    if !mounted_for_spawn.load(Ordering::SeqCst) || selected_conversation_id() != Some(conv_id.clone()) {
+                    if !mounted_for_spawn.load(Ordering::SeqCst)
+                        || selected_conversation_id() != Some(conv_id.clone())
+                    {
                         break;
                     }
 
@@ -773,4 +796,3 @@ pub fn ChatPage() -> Element {
         }
     }
 }
-

@@ -1,10 +1,12 @@
 use dioxus::prelude::*;
-use dioxus_primitives::dioxus_attributes::attributes;
-use dioxus_primitives::dropdown_menu::{
-    self, DropdownMenuContentProps, DropdownMenuItemProps, DropdownMenuProps,
-    DropdownMenuTriggerProps,
+use dioxus_primitives::{
+    dioxus_attributes::attributes,
+    dropdown_menu::{
+        self, DropdownMenuContentProps, DropdownMenuItemProps, DropdownMenuProps,
+        DropdownMenuTriggerProps,
+    },
+    merge_attributes,
 };
-use dioxus_primitives::merge_attributes;
 
 #[css_module("/src/components/dropdown_menu/style.css")]
 struct Styles;

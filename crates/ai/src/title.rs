@@ -1,8 +1,6 @@
 use futures::StreamExt;
 
-use crate::{
-    provider::{self, ProviderConfig},
-};
+use crate::provider::{self, ProviderConfig};
 
 pub fn normalize_title(raw: &str) -> String {
     let trimmed = raw.trim();
@@ -30,7 +28,13 @@ pub fn normalize_title(raw: &str) -> String {
     let mut cleaned = sanitized.to_string();
     if cleaned.len() > 48 {
         cleaned.truncate(48);
-        while !cleaned.is_empty() && cleaned.chars().last().expect("checked is_empty").is_whitespace() {
+        while !cleaned.is_empty()
+            && cleaned
+                .chars()
+                .last()
+                .expect("checked is_empty")
+                .is_whitespace()
+        {
             cleaned.pop();
         }
     }
@@ -38,22 +42,19 @@ pub fn normalize_title(raw: &str) -> String {
     cleaned
 }
 
-pub async fn generate_title(config: &ProviderConfig, model: &str, prompt: &str) -> anyhow::Result<String> {
+pub async fn generate_title(
+    config: &ProviderConfig,
+    model: &str,
+    prompt: &str,
+) -> anyhow::Result<String> {
     let instruction = format!(
         "Сгенерируй очень короткое и понятное название для чата на русском языке. Не используй кавычки, не пиши пояснений, только сам заголовок. Тема: {}",
         prompt.trim()
     );
 
     let history = Vec::new();
-    let stream_result = provider::start_stream(
-        config,
-        model,
-        instruction,
-        history,
-        None,
-        1,
-    )
-    .await;
+    let stream_result =
+        provider::start_stream(config, model, instruction, history, None, 1).await;
 
     let (mut events, _control) = stream_result?;
     let mut text = String::new();
@@ -64,11 +65,11 @@ pub async fn generate_title(config: &ProviderConfig, model: &str, prompt: &str) 
             provider::ChatEvent::Done { text: done, .. } => {
                 text = done;
                 break;
-            }
+            },
             provider::ChatEvent::Error(err) => anyhow::bail!(err),
             provider::ChatEvent::Reasoning(_)
             | provider::ChatEvent::ToolCallStarted { .. }
-            | provider::ChatEvent::ToolResultReceived { .. } => {}
+            | provider::ChatEvent::ToolResultReceived { .. } => {},
         }
     }
 
@@ -86,8 +87,17 @@ mod tests {
 
     #[test]
     fn normalize_title_strips_quotes_and_newlines() {
-        assert_eq!(normalize_title("\n  \"Срочный запрос\"  \n"), "Срочный запрос");
-        assert_eq!(normalize_title("Много   пробелов\nи\nпереносов"), "Много пробелов и переносов");
-        assert_eq!(normalize_title("x".repeat(60).as_str()), "x".repeat(48));
+        assert_eq!(
+            normalize_title("\n  \"Срочный запрос\"  \n"),
+            "Срочный запрос"
+        );
+        assert_eq!(
+            normalize_title("Много   пробелов\nи\nпереносов"),
+            "Много пробелов и переносов"
+        );
+        assert_eq!(
+            normalize_title("x".repeat(60).as_str()),
+            "x".repeat(48)
+        );
     }
 }

@@ -308,8 +308,7 @@ pub fn MarkdownMessage(content: String) -> Element {
     let mut plugins = comrak::options::Plugins::default();
     plugins.render.codefence_syntax_highlighter = Some(&adapter);
 
-    let rendered =
-        comrak::markdown_to_html_with_plugins(&content, &options, &plugins);
+    let rendered = comrak::markdown_to_html_with_plugins(&content, &options, &plugins);
     let html = enhance_markdown_html(rendered);
 
     rsx! {

@@ -1,12 +1,7 @@
 [workspace]
 members = [
     "hozz",
-    "crates/shared",
-    "crates/config",
-    "crates/machine",
-    "crates/telemetry",
-    "crates/prefs",
-    "crates/db", "crates/ai",
+    "crates/*",
 ]
 resolver = "2"
 
@@ -41,8 +36,7 @@ sled = "0.34"
 sha2 = "0.11"
 sysinfo = "0.39.6"
 sysproxy = "0.3"
-strum = { version = "0.28", features = ["derive"] }
-strum_macros = "0.28"
+strum = "0.28"
 tokio = { version = "1.53.1", features = ["full", "signal"] }
 tokio-util = { version = "0.7.19", features = ["codec"] }
 tracing = "0.1.44"
@@ -59,7 +53,13 @@ module_name_repetitions = "allow"
 too_many_lines = "warn"
 unwrap_used = "warn"
 
-
 [workspace.metadata.release]
 shared-version = true
 tag-name = "v{{version}}"
+
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
+strip = true
+debug = false

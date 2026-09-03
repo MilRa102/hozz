@@ -3,11 +3,10 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use rig::tool::server::ToolServerHandle;
-
 use config::CONF;
 use db::Database;
 use prefs::SettingsRegistry;
+use rig::tool::server::ToolServerHandle;
 use tokio::sync::OnceCell;
 
 use crate::{

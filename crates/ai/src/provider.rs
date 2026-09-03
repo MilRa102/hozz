@@ -1,12 +1,18 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
-use futures::{
-    stream::{self, BoxStream, StreamExt},
-};
+use futures::stream::{self, BoxStream, StreamExt};
 use rig::{
-    agent::MultiTurnStreamItem, client::{CompletionClient, Nothing}, completion::{
-        CompletionModel, GetTokenUsage, Message as RigMessage, message::{Reasoning, ReasoningContent},
-    }, providers::{copilot, gemini, ollama}, streaming::{StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse}, tool::server::ToolServerHandle,
+    agent::MultiTurnStreamItem,
+    client::{CompletionClient, Nothing},
+    completion::{
+        CompletionModel, GetTokenUsage, Message as RigMessage,
+        message::{Reasoning, ReasoningContent},
+    },
+    providers::{copilot, gemini, ollama},
+    streaming::{
+        StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse,
+    },
+    tool::server::ToolServerHandle,
 };
 use tokio::sync::Mutex;
 
@@ -77,46 +83,63 @@ pub async fn start_stream(
     history: Vec<RigMessage>,
     tool_server: Option<ToolServerHandle>,
     max_tool_turns: usize,
-) -> anyhow::Result<(BoxStream<'static, ChatEvent>, Arc<dyn StreamControl>)> {
+) -> anyhow::Result<(
+    BoxStream<'static, ChatEvent>,
+    Arc<dyn StreamControl>,
+)> {
     match config {
         ProviderConfig::Gemini { api_key } => {
-            let client = gemini::Client::new(api_key)
-                .map_err(|error| anyhow::anyhow!("Failed to create Gemini client: {error}"))?;
+            let client = gemini::Client::new(api_key).map_err(|error| {
+                anyhow::anyhow!("Failed to create Gemini client: {error}")
+            })?;
             if let Some(tool_server) = tool_server.clone() {
-                let agent = client.agent(model).tool_server_handle(tool_server).build();
+                let agent = client
+                    .agent(model)
+                    .tool_server_handle(tool_server)
+                    .build();
                 run_tool_enabled(agent, prompt, history, max_tool_turns).await
             } else {
                 let agent = client.agent(model).build();
                 run(agent, prompt, history).await
             }
-        }
+        },
         ProviderConfig::Copilot { api_key } => {
             let client = copilot::Client::builder()
                 .api_key(copilot::CopilotAuth::ApiKey(api_key.clone()))
                 .build()
-                .map_err(|error| anyhow::anyhow!("Failed to create Copilot client: {error}"))?;
+                .map_err(|error| {
+                    anyhow::anyhow!("Failed to create Copilot client: {error}")
+                })?;
             if let Some(tool_server) = tool_server.clone() {
-                let agent = client.agent(model).tool_server_handle(tool_server).build();
+                let agent = client
+                    .agent(model)
+                    .tool_server_handle(tool_server)
+                    .build();
                 run_tool_enabled(agent, prompt, history, max_tool_turns).await
             } else {
                 let agent = client.agent(model).build();
                 run(agent, prompt, history).await
             }
-        }
+        },
         ProviderConfig::Ollama { base_url } => {
             let client = ollama::Client::builder()
                 .api_key(Nothing)
                 .base_url(base_url)
                 .build()
-                .map_err(|error| anyhow::anyhow!("Failed to create Ollama client: {error}"))?;
+                .map_err(|error| {
+                    anyhow::anyhow!("Failed to create Ollama client: {error}")
+                })?;
             if let Some(tool_server) = tool_server.clone() {
-                let agent = client.agent(model).tool_server_handle(tool_server).build();
+                let agent = client
+                    .agent(model)
+                    .tool_server_handle(tool_server)
+                    .build();
                 run_tool_enabled(agent, prompt, history, max_tool_turns).await
             } else {
                 let agent = client.agent(model).build();
                 run(agent, prompt, history).await
             }
-        }
+        },
     }
 }
 
@@ -137,7 +160,9 @@ fn reasoning_text(reasoning: Reasoning) -> String {
         .filter_map(|part| match part {
             ReasoningContent::Text { text, .. } => Some(text),
             ReasoningContent::Summary(text) => Some(text),
-            ReasoningContent::Encrypted(_) | ReasoningContent::Redacted { .. } | _ => None,
+            ReasoningContent::Encrypted(_) | ReasoningContent::Redacted { .. } | _ => {
+                None
+            },
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -152,7 +177,7 @@ fn extract_text_from_value(value: &serde_json::Value) -> Option<String> {
             } else {
                 Some(trimmed.to_string())
             }
-        }
+        },
         serde_json::Value::Array(values) => values
             .iter()
             .filter_map(extract_text_from_value)
@@ -172,9 +197,10 @@ fn extract_text_from_value(value: &serde_json::Value) -> Option<String> {
                 "response",
             ] {
                 if let Some(child) = map.get(key)
-                    && let Some(text) = extract_text_from_value(child) {
-                        return Some(text);
-                    }
+                    && let Some(text) = extract_text_from_value(child)
+                {
+                    return Some(text);
+                }
             }
 
             for child in map.values() {
@@ -184,7 +210,7 @@ fn extract_text_from_value(value: &serde_json::Value) -> Option<String> {
             }
 
             None
-        }
+        },
         _ => None,
     }
 }
@@ -203,9 +229,10 @@ fn tool_name_from_value(value: &serde_json::Value) -> Option<String> {
 
             for key in ["function", "tool_call", "tool_result"] {
                 if let Some(child) = map.get(key)
-                    && let Some(name) = tool_name_from_value(child) {
-                        return Some(name);
-                    }
+                    && let Some(name) = tool_name_from_value(child)
+                {
+                    return Some(name);
+                }
             }
 
             for child in map.values() {
@@ -215,7 +242,7 @@ fn tool_name_from_value(value: &serde_json::Value) -> Option<String> {
             }
 
             None
-        }
+        },
         serde_json::Value::Array(values) => {
             for child in values {
                 if let Some(name) = tool_name_from_value(child) {
@@ -223,7 +250,7 @@ fn tool_name_from_value(value: &serde_json::Value) -> Option<String> {
                 }
             }
             None
-        }
+        },
         _ => None,
     }
 }
@@ -272,7 +299,10 @@ async fn run<M>(
     agent: rig::agent::Agent<M>,
     prompt: String,
     history: Vec<RigMessage>,
-) -> anyhow::Result<(BoxStream<'static, ChatEvent>, Arc<dyn StreamControl>)>
+) -> anyhow::Result<(
+    BoxStream<'static, ChatEvent>,
+    Arc<dyn StreamControl>,
+)>
 where
     M: CompletionModel + 'static,
     M::StreamingResponse: GetTokenUsage + Clone + Unpin + Send + 'static,
@@ -285,7 +315,9 @@ where
         })?
         .stream()
         .await
-        .map_err(|error| anyhow::anyhow!("Failed to start streaming completion: {error}"))?;
+        .map_err(|error| {
+            anyhow::anyhow!("Failed to start streaming completion: {error}")
+        })?;
 
     let response = Arc::new(Mutex::new(response));
     let control: Arc<dyn StreamControl> = Arc::new(ResponseControl(response.clone()));
@@ -311,27 +343,29 @@ where
                 Some(Ok(StreamedAssistantContent::Text(text))) => {
                     state.accumulated.push_str(&text.text);
                     return Some((ChatEvent::Delta(text.text), state));
-                }
+                },
                 Some(Ok(StreamedAssistantContent::Reasoning(reasoning))) => {
                     let text = reasoning_text(reasoning);
                     if text.is_empty() {
                         continue;
                     }
                     return Some((ChatEvent::Reasoning(text), state));
-                }
-                Some(Ok(StreamedAssistantContent::ReasoningDelta { reasoning, .. })) => {
+                },
+                Some(Ok(StreamedAssistantContent::ReasoningDelta {
+                    reasoning, ..
+                })) => {
                     if reasoning.is_empty() {
                         continue;
                     }
                     return Some((ChatEvent::Reasoning(reasoning), state));
-                }
+                },
                 Some(Ok(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
                     let event = ChatEvent::ToolCallStarted {
                         name: tool_call.function.name,
                         arguments: tool_call.function.arguments,
                     };
                     return Some((event, state));
-                }
+                },
                 Some(Ok(StreamedAssistantContent::Unknown(value))) => {
                     if let Some(text) = extract_text_from_value(&value) {
                         state.accumulated.push_str(&text);
@@ -341,17 +375,23 @@ where
                         return Some((event, state));
                     }
                     continue;
-                }
+                },
                 Some(Ok(_other)) => continue,
                 Some(Err(error)) => {
                     state.done = true;
                     return Some((ChatEvent::Error(error.to_string()), state));
-                }
+                },
                 None => {
                     state.done = true;
                     let text = state.accumulated.clone();
-                    return Some((ChatEvent::Done { text, raw: String::new() }, state));
-                }
+                    return Some((
+                        ChatEvent::Done {
+                            text,
+                            raw: String::new(),
+                        },
+                        state,
+                    ));
+                },
             }
         }
     });
@@ -365,7 +405,10 @@ async fn run_tool_enabled<M>(
     prompt: String,
     history: Vec<RigMessage>,
     max_tool_turns: usize,
-) -> anyhow::Result<(BoxStream<'static, ChatEvent>, Arc<dyn StreamControl>)>
+) -> anyhow::Result<(
+    BoxStream<'static, ChatEvent>,
+    Arc<dyn StreamControl>,
+)>
 where
     M: CompletionModel + 'static,
     M::StreamingResponse: GetTokenUsage + Clone + Unpin + Send + 'static,
@@ -384,98 +427,131 @@ where
     // Стейт: (Стрим Rig, Накопленный текст, Флаг завершения)
     let state = (stream, String::new(), false);
 
-    let events = stream::unfold(state, |(mut stream, mut accumulated, mut done)| async move {
-        if done {
-            return None;
-        }
+    let events = stream::unfold(
+        state,
+        |(mut stream, mut accumulated, mut done)| async move {
+            if done {
+                return None;
+            }
 
-        loop {
-            match stream.next().await {
-                Some(Ok(event)) => {
-                    // Используем правильный MultiTurnStreamItem из rig-core
-                    match event {
-                        MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text)) => {
-                            accumulated.push_str(&text.text);
-                            return Some((ChatEvent::Delta(text.text), (stream, accumulated, done)));
-                        }
-                        MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(reasoning)) => {
-                            let text = reasoning_text(reasoning);
-                            if text.is_empty() {
-                                continue;
-                            }
-                            return Some((ChatEvent::Reasoning(text), (stream, accumulated, done)));
-                        }
-                        MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ReasoningDelta { reasoning, .. }) => {
-                            if reasoning.is_empty() {
-                                continue;
-                            }
-                            return Some((ChatEvent::Reasoning(reasoning), (stream, accumulated, done)));
-                        }
-                        MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall { tool_call, .. }) => {
-                            let event = ChatEvent::ToolCallStarted {
-                                name: tool_call.function.name,
-                                arguments: tool_call.function.arguments,
-                            };
-                            return Some((event, (stream, accumulated, done)));
-                        }
-                        MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Unknown(value)) => {
-                            if let Some(text) = extract_text_from_value(&value) {
-                                accumulated.push_str(&text);
-                                return Some((ChatEvent::Delta(text), (stream, accumulated, done)));
-                            }
-                            if let Some(event) = event_from_unknown_chunk(value) {
+            loop {
+                match stream.next().await {
+                    Some(Ok(event)) => {
+                        // Используем правильный MultiTurnStreamItem из rig-core
+                        match event {
+                            MultiTurnStreamItem::StreamAssistantItem(
+                                StreamedAssistantContent::Text(text),
+                            ) => {
+                                accumulated.push_str(&text.text);
+                                return Some((
+                                    ChatEvent::Delta(text.text),
+                                    (stream, accumulated, done),
+                                ));
+                            },
+                            MultiTurnStreamItem::StreamAssistantItem(
+                                StreamedAssistantContent::Reasoning(reasoning),
+                            ) => {
+                                let text = reasoning_text(reasoning);
+                                if text.is_empty() {
+                                    continue;
+                                }
+                                return Some((
+                                    ChatEvent::Reasoning(text),
+                                    (stream, accumulated, done),
+                                ));
+                            },
+                            MultiTurnStreamItem::StreamAssistantItem(
+                                StreamedAssistantContent::ReasoningDelta {
+                                    reasoning,
+                                    ..
+                                },
+                            ) => {
+                                if reasoning.is_empty() {
+                                    continue;
+                                }
+                                return Some((
+                                    ChatEvent::Reasoning(reasoning),
+                                    (stream, accumulated, done),
+                                ));
+                            },
+                            MultiTurnStreamItem::StreamAssistantItem(
+                                StreamedAssistantContent::ToolCall { tool_call, .. },
+                            ) => {
+                                let event = ChatEvent::ToolCallStarted {
+                                    name: tool_call.function.name,
+                                    arguments: tool_call.function.arguments,
+                                };
                                 return Some((event, (stream, accumulated, done)));
-                            }
-                            continue;
+                            },
+                            MultiTurnStreamItem::StreamAssistantItem(
+                                StreamedAssistantContent::Unknown(value),
+                            ) => {
+                                if let Some(text) = extract_text_from_value(&value) {
+                                    accumulated.push_str(&text);
+                                    return Some((
+                                        ChatEvent::Delta(text),
+                                        (stream, accumulated, done),
+                                    ));
+                                }
+                                if let Some(event) = event_from_unknown_chunk(value) {
+                                    return Some((event, (stream, accumulated, done)));
+                                }
+                                continue;
+                            },
+                            MultiTurnStreamItem::StreamAssistantItem(_) => continue,
+
+                            MultiTurnStreamItem::StreamUserItem(item) => {
+                                // Здесь лежат результаты вызова инструментов
+                                let payload =
+                                    serde_json::to_value(&item).unwrap_or_default();
+                                return Some((
+                                    ChatEvent::ToolResultReceived {
+                                        name: "tool".to_string(),
+                                        payload,
+                                    },
+                                    (stream, accumulated, done),
+                                ));
+                            },
+                            MultiTurnStreamItem::FinalResponse(resp) => {
+                                done = true;
+                                let raw = serde_json::to_string(&resp)
+                                    .unwrap_or_else(|_| format!("{:?}", resp));
+                                return Some((
+                                    ChatEvent::Done {
+                                        text: accumulated.clone(),
+                                        raw,
+                                    },
+                                    (stream, accumulated, done),
+                                ));
+                            },
+                            _ => tracing::warn!(
+                                "Unhandled MultiTurnStreamItem: {:?}",
+                                serde_json::to_string(&event).unwrap_or_default()
+                            ),
                         }
-                        MultiTurnStreamItem::StreamAssistantItem(_) => continue,
-                        
-                        MultiTurnStreamItem::StreamUserItem(item) => {
-                            // Здесь лежат результаты вызова инструментов
-                            let payload = serde_json::to_value(&item).unwrap_or_default();
-                            return Some((
-                                ChatEvent::ToolResultReceived {
-                                    name: "tool".to_string(), 
-                                    payload,
-                                },
-                                (stream, accumulated, done),
-                            ));
-                        }
-                        MultiTurnStreamItem::FinalResponse(resp) => {
-                            done = true;
-                            let raw = serde_json::to_string(&resp).unwrap_or_else(|_| format!("{:?}", resp));
-                            return Some((
-                                ChatEvent::Done {
-                                    text: accumulated.clone(),
-                                    raw,
-                                },
-                                (stream, accumulated, done),
-                            ));
-                        }
-                        _ => tracing::warn!("Unhandled MultiTurnStreamItem: {:?}", serde_json::to_string(&event).unwrap_or_default()),
-                    }
-                }
-                Some(Err(error)) => {
-                    done = true;
-                    // Ошибка выведется сама благодаря type inference
-                    return Some((
-                        ChatEvent::Error(error.to_string()),
-                        (stream, accumulated, done),
-                    ));
-                }
-                None => {
-                    done = true;
-                    return Some((
-                        ChatEvent::Done {
-                            text: accumulated.clone(),
-                            raw: String::new(),
-                        },
-                        (stream, accumulated, done),
-                    ));
+                    },
+                    Some(Err(error)) => {
+                        done = true;
+                        // Ошибка выведется сама благодаря type inference
+                        return Some((
+                            ChatEvent::Error(error.to_string()),
+                            (stream, accumulated, done),
+                        ));
+                    },
+                    None => {
+                        done = true;
+                        return Some((
+                            ChatEvent::Done {
+                                text: accumulated.clone(),
+                                raw: String::new(),
+                            },
+                            (stream, accumulated, done),
+                        ));
+                    },
                 }
             }
-        }
-    });
+        },
+    );
 
     Ok((events.boxed(), control))
 }

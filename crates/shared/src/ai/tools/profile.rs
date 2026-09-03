@@ -3,12 +3,8 @@ use std::sync::Arc;
 use db::SledManager;
 use rig::tool::Tool;
 
-use crate::apps::{
-    Orchestrator,
-    proxy::Source,
-};
-
 use super::common::{AiToolError, EmptyArgs, ProxyProfileOutput};
+use crate::apps::{Orchestrator, proxy::Source};
 
 #[derive(Clone)]
 pub struct ProfileListTool {

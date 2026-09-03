@@ -1,12 +1,9 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use futures::StreamExt;
 use rig::{completion::Message as RigMessage, tool::server::ToolServerHandle};
 use serde_json::json;
-use tokio::sync::{broadcast, Mutex, watch};
+use tokio::sync::{Mutex, broadcast, watch};
 
 use crate::{
     control::{StreamCommand, StreamControl},
@@ -29,10 +26,7 @@ pub struct GenerationSnapshot {
 pub enum GenerationEvent {
     Delta(String),
     Thinking(String),
-    Finished {
-        text: String,
-        status: MessageStatus,
-    },
+    Finished { text: String, status: MessageStatus },
     Error(String),
 }
 
@@ -114,7 +108,8 @@ impl GenerationManager {
         });
         let (event_tx, _) = broadcast::channel(64);
         let (cancel_tx, mut cancel_rx) = watch::channel(false);
-        let control_slot: Arc<Mutex<Option<Arc<dyn StreamControl>>>> = Arc::new(Mutex::new(None));
+        let control_slot: Arc<Mutex<Option<Arc<dyn StreamControl>>>> =
+            Arc::new(Mutex::new(None));
 
         // 1. Регистрируем активную генерацию в карте МГНОВЕННО, до асинхронной подгрузки сети
         {
@@ -142,9 +137,7 @@ impl GenerationManager {
             };
             let _ = snapshot_tx.send(snapshot.clone());
 
-            let messages = history_store
-                .list(&conv_id)
-                .unwrap_or_default();
+            let messages = history_store.list(&conv_id).unwrap_or_default();
             let history: Vec<RigMessage> = messages.iter().map(history_message).collect();
 
             let stream_result = provider::start_stream(
@@ -154,7 +147,8 @@ impl GenerationManager {
                 history,
                 request.tools,
                 request.max_tool_turns,
-            ).await;
+            )
+            .await;
 
             let (mut events, control) = match stream_result {
                 Ok(res) => res,
@@ -162,17 +156,22 @@ impl GenerationManager {
                     snapshot.thinking.clear();
                     snapshot.finished = true;
                     let _ = snapshot_tx.send(snapshot.clone());
-                    let _ = event_tx_for_task.send(GenerationEvent::Error(err.to_string()));
+                    let _ =
+                        event_tx_for_task.send(GenerationEvent::Error(err.to_string()));
                     let _ = event_tx_for_task.send(GenerationEvent::Finished {
                         text: String::new(),
                         status: MessageStatus::Error(err.to_string()),
                     });
 
-                    let msg = Message::new(Role::Assistant, format!("Ошибка генерации: {err}"), "{}");
+                    let msg = Message::new(
+                        Role::Assistant,
+                        format!("Ошибка генерации: {err}"),
+                        "{}",
+                    );
                     let _ = history_store.append(&conv_id, &msg);
                     active_map.lock().await.remove(&conv_id);
                     return;
-                }
+                },
             };
 
             // Сохраняем StreamControl для паузы/возобновления
@@ -296,10 +295,12 @@ pub struct GenerationRequest {
 /// multi-turn context, preferring the full-fidelity `raw` JSON and falling
 /// back to plain text if it's missing or fails to parse (e.g. older data).
 pub fn history_message(msg: &Message) -> RigMessage {
-    if !msg.raw.is_empty() && msg.raw != "{}" 
-        && let Ok(parsed) = serde_json::from_str::<RigMessage>(&msg.raw) {
-            return parsed;
-        }
+    if !msg.raw.is_empty()
+        && msg.raw != "{}"
+        && let Ok(parsed) = serde_json::from_str::<RigMessage>(&msg.raw)
+    {
+        return parsed;
+    }
 
     match msg.role {
         Role::User => RigMessage::user(&msg.content),
@@ -308,7 +309,6 @@ pub fn history_message(msg: &Message) -> RigMessage {
         Role::Tool => RigMessage::user(&msg.content),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -333,7 +333,7 @@ mod tests {
             RigMessage::Assistant { content, .. } => {
                 let payload = serde_json::to_string(&content).unwrap_or_default();
                 assert!(payload.contains("from raw"));
-            }
+            },
             other => panic!("Expected assistant message, got {other:?}"),
         }
     }

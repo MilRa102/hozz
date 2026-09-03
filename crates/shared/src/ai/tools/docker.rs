@@ -1,8 +1,7 @@
 use rig::tool::Tool;
 
-use crate::apps::docker::Container;
-
 use super::common::{AiToolError, EmptyArgs};
+use crate::apps::docker::Container;
 
 #[derive(Clone)]
 pub struct DockerListTool;

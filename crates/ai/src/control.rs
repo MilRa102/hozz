@@ -44,7 +44,7 @@ where
                         res.lock().await.cancel();
                     });
                 }
-            }
+            },
         }
     }
 }

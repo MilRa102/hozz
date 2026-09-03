@@ -4,7 +4,8 @@ use rig::tool::server::{ToolServer, ToolServerHandle};
 
 use crate::{
     ai::tools::{
-        DockerListTool, ProfileListTool, ProxyStatusTool, ProxyToggleTool, SystemResourcesTool,
+        DockerListTool, ProfileListTool, ProxyStatusTool, ProxyToggleTool,
+        SystemResourcesTool,
     },
     apps::Orchestrator,
 };
