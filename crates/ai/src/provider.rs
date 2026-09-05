@@ -10,7 +10,8 @@ use rig::{
     },
     providers::{copilot, gemini, ollama},
     streaming::{
-        StreamedAssistantContent, StreamingCompletion, StreamingCompletionResponse,
+        StreamedAssistantContent, StreamedUserContent, StreamingCompletion,
+        StreamingCompletionResponse,
     },
     tool::server::ToolServerHandle,
 };
@@ -32,12 +33,17 @@ pub enum ChatEvent {
     Reasoning(String),
     /// A complete tool call requested by the model.
     ToolCallStarted {
+        /// Correlation handle echoed by the matching `ToolResultReceived`; empty
+        /// when the path that produced this event can't recover one.
+        id: String,
         name: String,
         arguments: serde_json::Value,
     },
     /// Tool/hosted-tool result or provider-native tool payload surfaced
     /// through unknown stream chunks.
     ToolResultReceived {
+        /// Echoes the originating `ToolCallStarted::id`; empty when unknown.
+        id: String,
         name: String,
         payload: serde_json::Value,
     },
@@ -289,10 +295,42 @@ fn event_from_unknown_chunk(value: serde_json::Value) -> Option<ChatEvent> {
         })
         .unwrap_or_else(|| "tool_result".to_string());
 
+    let id = map
+        .get("call_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
     Some(ChatEvent::ToolResultReceived {
+        id,
         name,
         payload: value,
     })
+}
+
+/// Best-effort success/error classification for a tool result payload — `rig`
+/// doesn't carry a structured success flag, so this looks for an `error`/
+/// `failure` key or telltale wording in the payload's text.
+pub(crate) fn tool_result_is_error(payload: &serde_json::Value) -> bool {
+    fn contains_error_marker(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(map) => {
+                map.contains_key("error")
+                    || map.contains_key("failure")
+                    || map.values().any(contains_error_marker)
+            },
+            serde_json::Value::Array(values) => values.iter().any(contains_error_marker),
+            serde_json::Value::String(text) => {
+                let lower = text.to_lowercase();
+                lower.contains("error")
+                    || lower.contains("failed")
+                    || lower.contains("ошибка")
+            },
+            _ => false,
+        }
+    }
+
+    contains_error_marker(payload)
 }
 
 async fn run<M>(
@@ -361,6 +399,7 @@ where
                 },
                 Some(Ok(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
                     let event = ChatEvent::ToolCallStarted {
+                        id: tool_call.id.clone(),
                         name: tool_call.function.name,
                         arguments: tool_call.function.arguments,
                     };
@@ -478,6 +517,7 @@ where
                                 StreamedAssistantContent::ToolCall { tool_call, .. },
                             ) => {
                                 let event = ChatEvent::ToolCallStarted {
+                                    id: tool_call.id.clone(),
                                     name: tool_call.function.name,
                                     arguments: tool_call.function.arguments,
                                 };
@@ -502,15 +542,29 @@ where
 
                             MultiTurnStreamItem::StreamUserItem(item) => {
                                 // Здесь лежат результаты вызова инструментов
-                                let payload =
-                                    serde_json::to_value(&item).unwrap_or_default();
-                                return Some((
-                                    ChatEvent::ToolResultReceived {
-                                        name: "tool".to_string(),
-                                        payload,
+                                let event = match &item {
+                                    StreamedUserContent::ToolResult {
+                                        tool_result,
+                                        ..
+                                    } => {
+                                        ChatEvent::ToolResultReceived {
+                                            id: tool_result.id.clone(),
+                                            // `rig_core::ToolResult` carries no tool name; the
+                                            // engine resolves it from the matching `ToolCallStarted`.
+                                            name: String::new(),
+                                            payload: serde_json::to_value(&item)
+                                                .unwrap_or_default(),
+                                        }
                                     },
-                                    (stream, accumulated, done),
-                                ));
+                                    #[allow(unreachable_patterns)]
+                                    _ => ChatEvent::ToolResultReceived {
+                                        id: String::new(),
+                                        name: "tool".to_string(),
+                                        payload: serde_json::to_value(&item)
+                                            .unwrap_or_default(),
+                                    },
+                                };
+                                return Some((event, (stream, accumulated, done)));
                             },
                             MultiTurnStreamItem::FinalResponse(resp) => {
                                 done = true;

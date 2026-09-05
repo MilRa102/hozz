@@ -19,6 +19,26 @@ pub struct GenerationSnapshot {
     pub text: String,
     pub thinking: String,
     pub finished: bool,
+    /// Tool calls issued so far this turn, in call order; updated in place as
+    /// results arrive so the UI can flip a loader to a status icon live.
+    pub tool_calls: Vec<ToolCallView>,
+}
+
+/// Lifecycle state of a single tool call within a [`GenerationSnapshot`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolCallStatus {
+    Running,
+    Success,
+    Error,
+}
+
+/// A tool call's live UI state, keyed by `id` (the correlation handle echoed
+/// between [`ChatEvent::ToolCallStarted`] and [`ChatEvent::ToolResultReceived`]).
+#[derive(Debug, Clone)]
+pub struct ToolCallView {
+    pub id: String,
+    pub name: String,
+    pub status: ToolCallStatus,
 }
 
 /// An event emitted while a generation is streaming.
@@ -134,6 +154,7 @@ impl GenerationManager {
                 thinking: "Загрузка модели...".to_string(),
                 text: String::new(),
                 finished: false,
+                tool_calls: Vec::new(),
             };
             let _ = snapshot_tx.send(snapshot.clone());
 
@@ -219,22 +240,54 @@ impl GenerationManager {
                                 let _ = snapshot_tx.send(snapshot.clone());
                                 let _ = event_tx_for_task.send(GenerationEvent::Thinking(reasoning));
                             }
-                            Some(ChatEvent::ToolCallStarted { name, arguments }) => {
+                            Some(ChatEvent::ToolCallStarted { id, name, arguments }) => {
                                 let raw = json!({
                                     "function": {
                                         "name": name,
                                         "arguments": arguments,
-                                    }
+                                    },
+                                    "tool_call_id": id,
                                 }).to_string();
                                 let msg = Message::new(Role::Tool, format!("Tool: {name}"), raw);
                                 let _ = history_store.append(&conv_id, &msg);
+
+                                snapshot.tool_calls.push(ToolCallView {
+                                    id,
+                                    name,
+                                    status: ToolCallStatus::Running,
+                                });
+                                let _ = snapshot_tx.send(snapshot.clone());
                             }
-                            Some(ChatEvent::ToolResultReceived { name, payload }) => {
+                            Some(ChatEvent::ToolResultReceived { id, name, payload }) => {
+                                let is_error = provider::tool_result_is_error(&payload);
+                                let status = if is_error {
+                                    ToolCallStatus::Error
+                                } else {
+                                    ToolCallStatus::Success
+                                };
+
+                                // Match by id when known, else fall back to the oldest still-running
+                                // call (the id-less unknown-chunk path never sends a name either).
+                                let matched_index = snapshot.tool_calls.iter().position(|entry| {
+                                    (!id.is_empty() && entry.id == id)
+                                        || (id.is_empty() && entry.status == ToolCallStatus::Running)
+                                });
+                                let resolved_name = matched_index
+                                    .map(|i| snapshot.tool_calls[i].name.clone())
+                                    .filter(|n| !n.is_empty())
+                                    .unwrap_or(name);
+                                if let Some(i) = matched_index {
+                                    snapshot.tool_calls[i].status = status;
+                                }
+                                let _ = snapshot_tx.send(snapshot.clone());
+
                                 let raw = json!({
-                                    "name": name,
+                                    "name": resolved_name,
                                     "result": payload,
+                                    "tool_call_id": id,
+                                    "status": if is_error { "error" } else { "success" },
                                 }).to_string();
-                                let msg = Message::new(Role::Tool, format!("Tool result: {name}"), raw);
+                                let msg = Message::new(Role::Tool, format!("Tool result: {resolved_name}"), raw);
                                 let _ = history_store.append(&conv_id, &msg);
                             }
                             Some(ChatEvent::Done { text, raw }) => {

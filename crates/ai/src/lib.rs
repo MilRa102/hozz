@@ -11,6 +11,7 @@ mod title;
 pub use control::StreamControl;
 pub use engine::{
     GenerationEvent, GenerationManager, GenerationRequest, GenerationSnapshot,
+    ToolCallStatus, ToolCallView,
 };
 pub use model::{Conversation, Folder, Message, MessageStatus, ProviderKind, Role};
 pub use provider::{ChatEvent, ProviderConfig};

@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    collections::{HashMap, VecDeque},
     rc::Rc,
     sync::{
         Arc,
@@ -9,9 +10,10 @@ use std::{
 
 use ai::{
     AiPrefsReader, Conversation, ConversationStore, GenerationManager, Message,
-    MessageStore, ProviderConfig, ProviderKind, Role,
+    MessageStore, ProviderConfig, ProviderKind, Role, ToolCallStatus,
 };
 use dioxus::{document::eval, logger::tracing, prelude::*};
+use dioxus_free_icons::icons::{md_action_icons::MdDone, md_alert_icons::MdError};
 use dioxus_icons::lucide::{
     CircleStop, Loader, MessageCircle, ReceiptText, Send, Trash2,
 };
@@ -20,7 +22,7 @@ use shared::{
     apps::{LoggingLayer, Orchestrator},
 };
 
-use crate::components::message::MarkdownMessage;
+use crate::{components::message::MarkdownMessage, utils::Icon};
 
 /// Преобразует JSON-значение в строку, чтобы его можно было показать в карточке деталей инструмента.
 fn value_to_text(value: &serde_json::Value) -> String {
@@ -35,28 +37,46 @@ fn value_to_text(value: &serde_json::Value) -> String {
     }
 }
 
-/// Извлекает название tool и его аргументы из raw/content payload, которые приходят от генератора.
+/// Извлекает название tool и его аргументы/результат из raw/content payload, которые приходят от генератора.
 fn extract_tool_details(raw: &str, content: &str) -> (String, Vec<(String, String)>) {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(raw)
-        && let Some(function) = val.get("function")
-    {
-        let name = function
-            .get("name")
-            .and_then(|n| n.as_str())
-            .unwrap_or("tool")
-            .to_string();
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(raw) {
+        if let Some(function) = val.get("function") {
+            let name = function
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("tool")
+                .to_string();
 
-        let mut details = Vec::new();
-        if let Some(args) = function.get("arguments") {
-            if let Some(obj) = args.as_object() {
+            let mut details = Vec::new();
+            if let Some(args) = function.get("arguments") {
+                if let Some(obj) = args.as_object() {
+                    for (k, v) in obj {
+                        details.push((k.clone(), value_to_text(v)));
+                    }
+                } else {
+                    details.push(("arguments".to_string(), value_to_text(args)));
+                }
+            }
+            return (name, details);
+        }
+
+        if let Some(result) = val.get("result") {
+            let name = val
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("tool")
+                .to_string();
+
+            let mut details = Vec::new();
+            if let Some(obj) = result.as_object() {
                 for (k, v) in obj {
                     details.push((k.clone(), value_to_text(v)));
                 }
             } else {
-                details.push(("arguments".to_string(), value_to_text(args)));
+                details.push(("result".to_string(), value_to_text(result)));
             }
+            return (name, details);
         }
-        return (name, details);
     }
 
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
@@ -84,6 +104,111 @@ fn extract_tool_details(raw: &str, content: &str) -> (String, Vec<(String, Strin
     )
 }
 
+/// Одно обращение к инструменту, полученное слиянием его call+result-сообщений
+/// (сопоставленных по `tool_call_id` в `raw`), чтобы UI показывал один бейдж на вызов.
+#[derive(Clone, PartialEq)]
+struct ToolGroup {
+    name: String,
+    status: ToolCallStatus,
+    args: Vec<(String, String)>,
+    result: Vec<(String, String)>,
+}
+
+/// Элемент таймлайна чата: обычное сообщение или смерженный бейдж вызова инструмента.
+#[derive(Clone)]
+enum TimelineItem {
+    Regular(Message),
+    Tool(ToolGroup),
+}
+
+/// Считывает `tool_call_id` из `raw`, если он там есть.
+fn tool_call_id_from_raw(raw: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()?
+        .get("tool_call_id")
+        .and_then(|v| v.as_str())
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+}
+
+/// Схлопывает вызов+результат каждого инструмента в один `ToolGroup`, сохраняя порядок остальных сообщений.
+///
+/// Многие провайдеры (например Ollama) не возвращают `tool_call_id`, поэтому при его
+/// отсутствии результат сопоставляется с самым старым ещё не завершённым вызовом (FIFO) —
+/// корректно, пока инструменты выполняются последовательно, а не параллельно.
+fn build_timeline(messages: &[Message]) -> Vec<TimelineItem> {
+    let mut timeline: Vec<TimelineItem> = Vec::with_capacity(messages.len());
+    let mut group_slots: HashMap<String, usize> = HashMap::new();
+    let mut pending: VecDeque<usize> = VecDeque::new();
+
+    for msg in messages {
+        if msg.role != Role::Tool {
+            timeline.push(TimelineItem::Regular(msg.clone()));
+            continue;
+        }
+
+        let tool_call_id = tool_call_id_from_raw(&msg.raw);
+        let is_result = msg
+            .raw
+            .parse::<serde_json::Value>()
+            .map(|v| v.get("result").is_some())
+            .unwrap_or(false);
+
+        if is_result {
+            let status = if msg.raw.contains("\"status\":\"error\"") {
+                ToolCallStatus::Error
+            } else {
+                ToolCallStatus::Success
+            };
+            let (name, result) = extract_tool_details(&msg.raw, &msg.content);
+
+            let matched_idx = tool_call_id
+                .as_ref()
+                .and_then(|id| group_slots.remove(id))
+                .or_else(|| {
+                    while let Some(idx) = pending.pop_front() {
+                        if let Some(TimelineItem::Tool(group)) = timeline.get(idx)
+                            && group.status == ToolCallStatus::Running
+                        {
+                            return Some(idx);
+                        }
+                    }
+                    None
+                });
+
+            if let Some(idx) = matched_idx
+                && let Some(TimelineItem::Tool(group)) = timeline.get_mut(idx)
+            {
+                group.status = status;
+                group.result = result;
+                continue;
+            }
+
+            timeline.push(TimelineItem::Tool(ToolGroup {
+                name,
+                status,
+                args: Vec::new(),
+                result,
+            }));
+        } else {
+            let (name, args) = extract_tool_details(&msg.raw, &msg.content);
+            timeline.push(TimelineItem::Tool(ToolGroup {
+                name,
+                status: ToolCallStatus::Running,
+                args,
+                result: Vec::new(),
+            }));
+            let idx = timeline.len() - 1;
+            pending.push_back(idx);
+            if let Some(id) = tool_call_id {
+                group_slots.insert(id, idx);
+            }
+        }
+    }
+
+    timeline
+}
+
 /// Возвращает цветовую схему для бейджа провайдера в списке диалогов.
 fn provider_badge_class(kind: &ProviderKind) -> &'static str {
     match kind {
@@ -93,12 +218,34 @@ fn provider_badge_class(kind: &ProviderKind) -> &'static str {
     }
 }
 
-/// Возвращает цветовую схему для бейджа tool-события: вызов или результат.
-fn tool_badge_class(event_kind: &str) -> &'static str {
-    match event_kind {
-        "result" => "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
-        _ => "bg-violet-500/10 text-violet-400 border-violet-500/30",
+/// Возвращает цветовую схему бейджа вызова инструмента по его текущему статусу.
+fn tool_badge_class(status: ToolCallStatus) -> &'static str {
+    match status {
+        ToolCallStatus::Running => {
+            "bg-violet-500/10 text-violet-400 border-violet-500/30"
+        },
+        ToolCallStatus::Success => {
+            "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+        },
+        ToolCallStatus::Error => "bg-rose-500/10 text-rose-400 border-rose-500/30",
     }
+}
+
+/// Компактный слепок live-статусов вызовов инструментов из `GenerationSnapshot`,
+/// чтобы обнаружить изменение и обновить список сообщений раньше конца генерации.
+fn tool_calls_signature(tool_calls: &[ai::ToolCallView]) -> String {
+    tool_calls
+        .iter()
+        .map(|call| {
+            let status = match call.status {
+                ToolCallStatus::Running => 'r',
+                ToolCallStatus::Success => 's',
+                ToolCallStatus::Error => 'e',
+            };
+            format!("{}:{status}", call.id)
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 mod sidebar {
@@ -223,31 +370,39 @@ mod chat_area {
         stream_text: String,
         generation_active: bool,
     ) -> Element {
+        let timeline = build_timeline(&messages);
+
         rsx! {
             div {
                 id: "chat-scroll-container",
                 class: "flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar",
-                for msg in messages.iter() {
+                for (idx , item) in timeline.iter().enumerate() {
                     div {
-                        key: "{msg.id}",
+                        key: "{idx}",
                         class: format!(
                             "flex flex-col {}",
-                            if msg.role == Role::User { "items-end" } else { "items-start" }
-                        ),
-                        if msg.role == Role::Tool {
-                            tool_message_content { msg: msg.clone() }
-                        } else {
-                            div {
-                                class: format!(
-                                    "max-w-[85%] text-sm leading-relaxed {}",
-                                    if msg.role == Role::User {
-                                        "rounded-2xl border bg-violet-500/10 border-violet-500/30 px-4 py-3 text-zinc-100"
-                                    } else {
-                                        "px-0 py-0 text-zinc-200"
-                                    }
-                                ),
-                                MarkdownMessage { content: msg.content.clone() }
+                            match item {
+                                TimelineItem::Regular(msg) if msg.role == Role::User => "items-end",
+                                _ => "items-start",
                             }
+                        ),
+                        match item {
+                            TimelineItem::Tool(group) => rsx! {
+                                ToolCallBadge { group: group.clone() }
+                            },
+                            TimelineItem::Regular(msg) => rsx! {
+                                div {
+                                    class: format!(
+                                        "max-w-[85%] text-sm leading-relaxed {}",
+                                        if msg.role == Role::User {
+                                            "rounded-2xl border bg-violet-500/10 border-violet-500/30 px-4 py-3 text-zinc-100"
+                                        } else {
+                                            "px-0 py-0 text-zinc-200"
+                                        }
+                                    ),
+                                    MarkdownMessage { content: msg.content.clone() }
+                                }
+                            },
                         }
                     }
                 }
@@ -360,35 +515,40 @@ mod chat_area {
         }
     }
 
+    /// Бейдж одного вызова инструмента: лоадер пока идёт выполнение, иконка статуса после результата.
     #[component]
-    pub(super) fn tool_message_content(msg: Message) -> Element {
-        let raw_meta = if msg.raw.trim().is_empty() {
-            "{}"
-        } else {
-            &msg.raw
-        };
-        let event_kind = if raw_meta.contains("\"function\"") {
-            "call"
-        } else {
-            "result"
-        };
-
-        let (tool_name, details) = extract_tool_details(raw_meta, &msg.content);
-        let badge_class = tool_badge_class(event_kind);
+    pub(super) fn ToolCallBadge(group: ToolGroup) -> Element {
+        let badge_class = tool_badge_class(group.status);
+        let mut details = group.args.clone();
+        details.extend(group.result.clone());
         let has_details = !details.is_empty();
 
-        let badge_label = if event_kind == "result" {
-            "результат"
-        } else {
-            "вызов"
+        let (status_icon, status_label) = match group.status {
+            ToolCallStatus::Running => (rsx!(Loader { size: "13px" }), "вызов"),
+            ToolCallStatus::Success => (
+                rsx!(Icon {
+                    icon: MdDone,
+                    size: 13,
+                    color: "#34d399"
+                }),
+                "готово",
+            ),
+            ToolCallStatus::Error => (
+                rsx!(Icon {
+                    icon: MdError,
+                    size: 13,
+                    color: "#fb7185"
+                }),
+                "ошибка",
+            ),
         };
 
         rsx! {
             div { class: "relative group",
                 div { class: "inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 {badge_class}",
-                    span { class: "text-sm", if event_kind == "result" { "◉" } else { "⚙" } }
-                    span { class: "font-mono text-[11px] uppercase tracking-[0.16em]", "{badge_label}" }
-                    span { class: "font-mono text-xs text-zinc-100 font-semibold", "{tool_name}" }
+                    span { class: "flex items-center", {status_icon} }
+                    span { class: "font-mono text-[11px] uppercase tracking-[0.16em]", "{status_label}" }
+                    span { class: "font-mono text-xs text-zinc-100 font-semibold", "{group.name}" }
                 }
 
                 if has_details {
@@ -396,7 +556,7 @@ mod chat_area {
                         div { class: "rounded-xl border border-violet-400/30 bg-zinc-950/95 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.6)] backdrop-blur-md",
                             table { class: "w-full text-xs border-separate border-spacing-y-1",
                                 tbody {
-                                    for (key, value) in details.iter() {
+                                    for (key , value) in details.iter() {
                                         tr {
                                             td { class: "align-top pr-3 text-violet-300 font-mono whitespace-nowrap", "{key}" }
                                             td { class: "align-top text-zinc-300 font-mono break-all", "{value}" }
@@ -646,6 +806,8 @@ pub fn ChatPage() -> Element {
 
             if let Some(mut rx) = manager_cl.subscribe(&conv_id).await {
                 let initial_snapshot = rx.borrow().clone();
+                let mut last_tool_signature =
+                    tool_calls_signature(&initial_snapshot.tool_calls);
                 if mounted_for_spawn.load(Ordering::SeqCst) {
                     if !initial_snapshot.text.is_empty() {
                         is_thinking.set(false);
@@ -681,6 +843,14 @@ pub fn ChatPage() -> Element {
                             stream_text.set(snapshot.text);
                         } else if !snapshot.thinking.is_empty() {
                             is_thinking.set(true);
+                        }
+
+                        // Обновляем список сообщений сразу, как только меняется статус
+                        // вызова инструмента, не дожидаясь конца генерации.
+                        let tool_signature = tool_calls_signature(&snapshot.tool_calls);
+                        if tool_signature != last_tool_signature {
+                            last_tool_signature = tool_signature;
+                            reload_tick.write();
                         }
 
                         if snapshot.finished {
