@@ -56,6 +56,35 @@ pub struct TavilySearchOutput {
     pub results: Vec<TavilySearchResultOutput>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TavilyExtractArgs {
+    pub urls: Vec<String>,
+    #[serde(default)]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TavilyExtractFailedResultOutput {
+    pub url: String,
+    pub error: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TavilyExtractResultOutput {
+    pub url: String,
+    pub raw_content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub favicon: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TavilyExtractOutput {
+    pub results: Vec<TavilyExtractResultOutput>,
+    pub failed_results: Vec<TavilyExtractFailedResultOutput>,
+}
+
 #[derive(Debug)]
 pub struct AiToolError(pub String);
 

@@ -2,7 +2,11 @@ use rest::RestClient;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
-use super::common::{AiToolError, TavilySearchArgs, TavilySearchOutput, TavilySearchResultOutput};
+use super::common::{
+    AiToolError, TavilyExtractArgs, TavilyExtractFailedResultOutput,
+    TavilyExtractOutput, TavilyExtractResultOutput, TavilySearchArgs,
+    TavilySearchOutput, TavilySearchResultOutput,
+};
 
 #[derive(Clone)]
 pub struct TavilySearchTool {
@@ -149,5 +153,167 @@ impl Tool for TavilySearchTool {
             query: query.to_string(),
             results,
         })
+    }
+}
+
+#[derive(Clone)]
+pub struct TavilyExtractTool {
+    api_key: String,
+}
+
+impl TavilyExtractTool {
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct TavilyExtractRequest {
+    urls: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extract_depth: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TavilyExtractApiResponse {
+    results: Vec<TavilyExtractApiResult>,
+    #[serde(default)]
+    failed_results: Vec<TavilyExtractApiFailedResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TavilyExtractApiResult {
+    url: String,
+    raw_content: String,
+    #[serde(default)]
+    images: Option<Vec<String>>,
+    #[serde(default)]
+    favicon: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TavilyExtractApiFailedResult {
+    url: String,
+    error: String,
+}
+
+impl Tool for TavilyExtractTool {
+    const NAME: &'static str = "tavily_extract";
+
+    type Error = AiToolError;
+    type Args = TavilyExtractArgs;
+    type Output = TavilyExtractOutput;
+
+    fn description(&self) -> String {
+        "Read and extract the main text content from one or more URLs using Tavily. Use this when you need the actual article or page contents from a search result URL.".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "One or more URLs to extract content from."
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Optional query to help Tavily focus extraction on the relevant part of each page."
+                }
+            },
+            "required": ["urls"],
+            "additionalProperties": false
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let urls = args.urls.into_iter().map(|url| url.trim().to_string()).filter(|url| !url.is_empty()).collect::<Vec<_>>();
+        if urls.is_empty() {
+            return Err(AiToolError("urls must contain at least one non-empty URL".to_string()));
+        }
+
+        let request = TavilyExtractRequest {
+            urls: urls.clone(),
+            query: args.query.as_deref().filter(|value| !value.trim().is_empty()).map(str::to_string),
+            extract_depth: Some("basic".to_string()),
+            format: Some("markdown".to_string()),
+        };
+
+        let client = RestClient::builder()
+            .base_url("https://api.tavily.com")
+            .bearer_auth(self.api_key.clone())
+            .build()?;
+
+        let response: TavilyExtractApiResponse = client
+            .post("/extract")
+            .json(&request)?
+            .json_response()
+            .await?;
+
+        let results = response
+            .results
+            .into_iter()
+            .map(|entry| TavilyExtractResultOutput {
+                url: entry.url,
+                raw_content: entry.raw_content,
+                images: entry.images,
+                favicon: entry.favicon,
+            })
+            .collect();
+
+        let failed_results = response
+            .failed_results
+            .into_iter()
+            .map(|entry| TavilyExtractFailedResultOutput {
+                url: entry.url,
+                error: entry.error,
+            })
+            .collect();
+
+        Ok(TavilyExtractOutput {
+            results,
+            failed_results,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tavily_extract_args_and_response_round_trip() {
+        let args = TavilyExtractArgs {
+            urls: vec!["https://example.com".to_string()],
+            query: Some("rust async".to_string()),
+        };
+
+        let request = serde_json::json!({
+            "urls": args.urls,
+            "query": args.query,
+        });
+
+        assert_eq!(request["urls"][0], "https://example.com");
+        assert_eq!(request["query"], "rust async");
+
+        let response = TavilyExtractOutput {
+            results: vec![TavilyExtractResultOutput {
+                url: "https://example.com".to_string(),
+                raw_content: "content".to_string(),
+                images: Some(vec!["https://example.com/a.png".to_string()]),
+                favicon: Some("https://example.com/favicon.ico".to_string()),
+            }],
+            failed_results: vec![],
+        };
+
+        assert_eq!(response.results.len(), 1);
+        assert!(response.failed_results.is_empty());
     }
 }

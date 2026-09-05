@@ -231,6 +231,72 @@ fn tool_badge_class(status: ToolCallStatus) -> &'static str {
     }
 }
 
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+struct TavilyExtractEntry {
+    url: String,
+    #[serde(default)]
+    raw_content: Option<String>,
+    #[serde(default)]
+    images: Option<Vec<String>>,
+    #[serde(default)]
+    favicon: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+struct TavilyExtractPanel {
+    #[serde(default)]
+    results: Vec<TavilyExtractEntry>,
+    #[serde(default)]
+    failed_results: Vec<TavilyExtractEntry>,
+}
+
+fn parse_tavily_extract_payload(group: &ToolGroup) -> Option<TavilyExtractPanel> {
+    let mut payload_text = None;
+    for (key, value) in &group.result {
+        if key == "results" || key == "failed_results" {
+            payload_text = Some(value.as_str());
+            break;
+        }
+    }
+
+    let payload_text = payload_text?;
+    let parsed = serde_json::from_str::<serde_json::Value>(payload_text).ok()?;
+
+    match parsed {
+        serde_json::Value::Array(items) => {
+            let mut combined = TavilyExtractPanel::default();
+            for item in items {
+                if let Ok(entry) = serde_json::from_value::<TavilyExtractEntry>(item) {
+                    if entry.error.is_some() {
+                        combined.failed_results.push(entry);
+                    } else {
+                        combined.results.push(entry);
+                    }
+                }
+            }
+            Some(combined)
+        }
+        serde_json::Value::Object(obj) => {
+            if let Ok(panel) = serde_json::from_value::<TavilyExtractPanel>(serde_json::Value::Object(obj)) {
+                Some(panel)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn truncate_text(value: &str, limit: usize) -> String {
+    if value.chars().count() > limit {
+        format!("{}...", value.chars().take(limit).collect::<String>())
+    } else {
+        value.to_string()
+    }
+}
+
 /// Компактный слепок live-статусов вызовов инструментов из `GenerationSnapshot`,
 /// чтобы обнаружить изменение и обновить список сообщений раньше конца генерации.
 fn tool_calls_signature(tool_calls: &[ai::ToolCallView]) -> String {
@@ -529,6 +595,8 @@ mod chat_area {
         let mut details = group.args.clone();
         details.extend(group.result.clone());
         let has_details = !details.is_empty();
+        let mut expanded = use_signal(|| true);
+        let extract_payload = parse_tavily_extract_payload(&group);
 
         let (status_icon, status_label) = match group.status {
             ToolCallStatus::Running => (rsx!(Loader { size: "13px" }), "вызов"),
@@ -551,14 +619,81 @@ mod chat_area {
         };
 
         rsx! {
-            div { class: "relative group",
+            div { class: "relative w-full max-w-[85%]",
                 div { class: "inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 {badge_class}",
                     span { class: "flex items-center", {status_icon} }
                     span { class: "font-mono text-[11px] uppercase tracking-[0.16em]", "{status_label}" }
                     span { class: "font-mono text-xs text-zinc-100 font-semibold", "{group.name}" }
                 }
 
-                if has_details {
+                if let Some(payload) = extract_payload {
+                    div { class: "mt-2 rounded-xl border border-violet-400/30 bg-zinc-950/95 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.6)] backdrop-blur-md text-sm",
+                        button {
+                            class: "mb-2 flex w-full items-center justify-between rounded-lg border border-white/10 bg-zinc-900/80 px-2 py-1.5 text-left text-xs font-medium text-zinc-200",
+                            onclick: move |_| expanded.toggle(),
+                            span { "Tavily Extract" }
+                            span { class: "text-[10px] uppercase tracking-wide text-violet-300", if expanded() { "Hide" } else { "Show" } }
+                        }
+
+                        if expanded() {
+                            if !payload.results.is_empty() {
+                                div { class: "space-y-3",
+                                    for entry in payload.results.iter() {
+                                        div { class: "rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5",
+                                            div { class: "mb-2 flex items-center justify-between gap-2",
+                                                a {
+                                                    href: "{entry.url}",
+                                                    target: "_blank",
+                                                    rel: "noopener noreferrer",
+                                                    class: "truncate text-xs font-medium text-emerald-300 underline underline-offset-2",
+                                                    "{entry.url}"
+                                                }
+                                                if let Some(favicon) = &entry.favicon {
+                                                    img {
+                                                        src: "{favicon}",
+                                                        alt: "favicon",
+                                                        class: "h-4 w-4 rounded-sm bg-white/5 object-cover"
+                                                    }
+                                                }
+                                            }
+                                            if let Some(images) = &entry.images {
+                                                if !images.is_empty() {
+                                                    div { class: "mb-2 flex flex-wrap gap-2",
+                                                        for image in images.iter().take(4) {
+                                                            img {
+                                                                src: "{image}",
+                                                                alt: "extract preview",
+                                                                class: "h-14 w-20 rounded-md object-cover border border-white/10 bg-zinc-900"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if let Some(content) = &entry.raw_content {
+                                                pre { class: "whitespace-pre-wrap break-words text-[11px] leading-5 text-zinc-200 font-mono max-h-40 overflow-auto custom-scrollbar",
+                                                    "{truncate_text(content, 700)}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if !payload.failed_results.is_empty() {
+                                div { class: "mt-3 space-y-2",
+                                    for entry in payload.failed_results.iter() {
+                                        div { class: "rounded-lg border border-rose-500/20 bg-rose-500/5 p-2.5",
+                                            div { class: "text-[11px] font-medium text-rose-300", "{entry.url}" }
+                                            if let Some(error) = &entry.error {
+                                                div { class: "mt-1 text-[11px] text-zinc-300", "{error}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if has_details {
                     div { class: "pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 hidden min-w-[300px] max-w-[520px] group-hover:block",
                         div { class: "rounded-xl border border-violet-400/30 bg-zinc-950/95 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.6)] backdrop-blur-md",
                             table { class: "w-full text-xs border-separate border-spacing-y-1",

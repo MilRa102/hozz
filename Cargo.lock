@@ -5010,6 +5010,7 @@ dependencies = [
  "interprocess",
  "machine",
  "prefs",
+ "serde",
  "serde_json",
  "shared",
  "telemetry",

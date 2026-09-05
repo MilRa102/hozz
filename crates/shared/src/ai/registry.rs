@@ -6,7 +6,7 @@ use rig::tool::server::{ToolServer, ToolServerHandle};
 use crate::{
     ai::tools::{
         DockerListTool, ProfileListTool, ProxyStatusTool, ProxyToggleTool,
-        SystemResourcesTool,
+        SystemResourcesTool, TavilyExtractTool,
     },
     apps::Orchestrator,
 };
@@ -37,7 +37,9 @@ impl AiRegistry for Orchestrator {
                 .tool(SystemResourcesTool);
 
             if let Some(apikey) = AiPrefsReader.tavily_api_key() {
-                builder = builder.tool(crate::ai::tools::TavilySearchTool::new(apikey));
+                builder = builder
+                    .tool(crate::ai::tools::TavilySearchTool::new(apikey.clone()))
+                    .tool(TavilyExtractTool::new(apikey));
             }
 
             builder.run()

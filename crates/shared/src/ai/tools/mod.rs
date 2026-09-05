@@ -7,11 +7,12 @@ pub mod tavily;
 
 pub use common::{
     AiToolError, EmptyArgs, ProxyProfileOutput, ProxyStatusOutput,
-    TavilySearchArgs, TavilySearchOutput, TavilySearchResultOutput,
-    ToggleProxyArgs,
+    TavilyExtractArgs, TavilyExtractFailedResultOutput, TavilyExtractOutput,
+    TavilyExtractResultOutput, TavilySearchArgs, TavilySearchOutput,
+    TavilySearchResultOutput, ToggleProxyArgs,
 };
 pub use docker::DockerListTool;
 pub use profile::ProfileListTool;
 pub use proxy::{ProxyStatusTool, ProxyToggleTool};
 pub use system::SystemResourcesTool;
-pub use tavily::TavilySearchTool;
+pub use tavily::{TavilyExtractTool, TavilySearchTool};
