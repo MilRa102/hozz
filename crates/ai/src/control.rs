@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
-use rig::{completion::GetTokenUsage, streaming::StreamingCompletionResponse};
+use futures::future::AbortHandle;
 use strum::{Display, EnumString};
-use tokio::sync::Mutex;
 
 /// A small command enum for controlling an in-flight streaming generation.
 /// The current provider layer only needs a single cancellation action, so we
@@ -22,36 +19,15 @@ pub trait StreamControl: Send + Sync {
     async fn apply(&self, command: StreamCommand);
 }
 
-pub(crate) struct ResponseControl<R>(pub Arc<Mutex<StreamingCompletionResponse<R>>>)
-where
-    R: Clone + Unpin + GetTokenUsage;
-
-pub(crate) struct NoopStreamControl;
+pub(crate) struct ResponseControl(pub AbortHandle);
 
 #[async_trait::async_trait]
-impl<R> StreamControl for ResponseControl<R>
-where
-    R: Clone + Unpin + GetTokenUsage + Send + 'static,
-{
+impl StreamControl for ResponseControl {
     async fn apply(&self, command: StreamCommand) {
         match command {
-            StreamCommand::Cancel => {
-                if let Ok(guard) = self.0.try_lock() {
-                    guard.cancel();
-                } else {
-                    let res = self.0.clone();
-                    tokio::spawn(async move {
-                        res.lock().await.cancel();
-                    });
-                }
-            },
+            StreamCommand::Cancel => self.0.abort(),
         }
     }
-}
-
-#[async_trait::async_trait]
-impl StreamControl for NoopStreamControl {
-    async fn apply(&self, _command: StreamCommand) {}
 }
 
 #[cfg(test)]

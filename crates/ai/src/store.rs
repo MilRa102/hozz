@@ -1,6 +1,6 @@
 use db::SledManager;
 
-use crate::model::{Conversation, Folder, Message};
+use crate::model::{Conversation, ConversationUsage, Folder, Message};
 
 /// Conversations and folders each get their own dedicated Sled tree, keyed
 /// directly by id — no risk of mixing archived byte layouts of different types.
@@ -13,6 +13,7 @@ const FOLDERS_TREE: &str = "ai_folders";
 /// timestamp keeps Sled's lexicographic key order equal to chronological order, and
 /// the trailing message id breaks ties for messages created in the same millisecond.
 const MESSAGES_TREE: &str = "ai_messages";
+const USAGE_TREE: &str = "ai_conversation_usage";
 
 fn message_key(conversation_id: &str, timestamp_ms: i64, message_id: &str) -> String {
     format!("{conversation_id}:{timestamp_ms:019}:{message_id}")
@@ -82,6 +83,30 @@ impl MessageStore {
     /// Atomically deletes every message belonging to a conversation.
     pub(crate) fn delete_all(&self, conversation_id: &str) -> anyhow::Result<()> {
         SledManager::delete_prefix(self, &message_prefix(conversation_id))
+    }
+}
+
+#[derive(PartialEq)]
+pub struct ConversationUsageStore;
+
+impl SledManager<ConversationUsage> for ConversationUsageStore {
+    const TREE_NAME: &'static str = USAGE_TREE;
+}
+
+impl ConversationUsageStore {
+    pub fn find(
+        &self,
+        conversation_id: &str,
+    ) -> anyhow::Result<Option<ConversationUsage>> {
+        SledManager::get(self, conversation_id)
+    }
+
+    pub fn upsert(
+        &self,
+        conversation_id: &str,
+        usage: &ConversationUsage,
+    ) -> anyhow::Result<()> {
+        SledManager::save(self, conversation_id, usage)
     }
 }
 

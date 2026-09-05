@@ -1,25 +1,24 @@
 use std::sync::Arc;
 
-use futures::stream::{self, BoxStream, StreamExt};
+use futures::{
+    future::{AbortHandle, Abortable},
+    stream::{self, BoxStream, StreamExt},
+};
 use rig::{
     agent::MultiTurnStreamItem,
-    client::{CompletionClient, Nothing},
+    client::{AgentClientExt, Nothing},
     completion::{
-        CompletionModel, GetTokenUsage, Message as RigMessage,
+        Message as RigMessage,
         message::{Reasoning, ReasoningContent},
     },
     providers::{copilot, gemini, ollama},
-    streaming::{
-        StreamedAssistantContent, StreamedUserContent, StreamingCompletion,
-        StreamingCompletionResponse,
-    },
+    streaming::{StreamedAssistantContent, StreamedUserContent},
     tool::server::ToolServerHandle,
 };
-use tokio::sync::Mutex;
 
 use crate::{
-    control::{NoopStreamControl, ResponseControl, StreamControl},
-    model::ProviderKind,
+    control::{ResponseControl, StreamControl},
+    model::{ConversationUsage, ProviderKind},
 };
 
 /// A normalized chunk of a streaming generation, provider-agnostic — this is
@@ -47,6 +46,8 @@ pub enum ChatEvent {
         name: String,
         payload: serde_json::Value,
     },
+    /// Usage reported after one completed model call in a multi-turn run.
+    Usage(ConversationUsage),
     /// The stream ended (naturally or via `StreamControl::cancel`). Carries the
     /// full accumulated text and a JSON-serialized `rig_core` assistant
     /// message (see `Message.raw`) for rehydrating exact multi-turn context.
@@ -103,10 +104,10 @@ pub async fn start_stream(
                     .agent(model)
                     .tool_server_handle(tool_server)
                     .build();
-                run_tool_enabled(agent, prompt, history, max_tool_turns).await
+                run(agent, prompt, history, max_tool_turns).await
             } else {
                 let agent = client.agent(model).build();
-                run(agent, prompt, history).await
+                run(agent, prompt, history, max_tool_turns).await
             }
         },
         ProviderConfig::Copilot { api_key } => {
@@ -121,10 +122,10 @@ pub async fn start_stream(
                     .agent(model)
                     .tool_server_handle(tool_server)
                     .build();
-                run_tool_enabled(agent, prompt, history, max_tool_turns).await
+                run(agent, prompt, history, max_tool_turns).await
             } else {
                 let agent = client.agent(model).build();
-                run(agent, prompt, history).await
+                run(agent, prompt, history, max_tool_turns).await
             }
         },
         ProviderConfig::Ollama { base_url } => {
@@ -140,23 +141,13 @@ pub async fn start_stream(
                     .agent(model)
                     .tool_server_handle(tool_server)
                     .build();
-                run_tool_enabled(agent, prompt, history, max_tool_turns).await
+                run(agent, prompt, history, max_tool_turns).await
             } else {
                 let agent = client.agent(model).build();
-                run(agent, prompt, history).await
+                run(agent, prompt, history, max_tool_turns).await
             }
         },
     }
-}
-
-// Keep PollState strictly for the tool-free standard path
-struct PollState<R>
-where
-    R: Clone + Unpin + GetTokenUsage,
-{
-    response: Arc<Mutex<StreamingCompletionResponse<R>>>,
-    accumulated: String,
-    done: bool,
 }
 
 fn reasoning_text(reasoning: Reasoning) -> String {
@@ -166,9 +157,7 @@ fn reasoning_text(reasoning: Reasoning) -> String {
         .filter_map(|part| match part {
             ReasoningContent::Text { text, .. } => Some(text),
             ReasoningContent::Summary(text) => Some(text),
-            ReasoningContent::Encrypted(_) | ReasoningContent::Redacted { .. } | _ => {
-                None
-            },
+            ReasoningContent::Encrypted(_) | ReasoningContent::Redacted { .. } => None,
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -333,126 +322,21 @@ pub(crate) fn tool_result_is_error(payload: &serde_json::Value) -> bool {
     contains_error_marker(payload)
 }
 
-async fn run<M>(
-    agent: rig::agent::Agent<M>,
-    prompt: String,
-    history: Vec<RigMessage>,
-) -> anyhow::Result<(
-    BoxStream<'static, ChatEvent>,
-    Arc<dyn StreamControl>,
-)>
-where
-    M: CompletionModel + 'static,
-    M::StreamingResponse: GetTokenUsage + Clone + Unpin + Send + 'static,
-{
-    let response = agent
-        .stream_completion(prompt, history)
-        .await
-        .map_err(|error| {
-            anyhow::anyhow!("Failed to build streaming completion request: {error}")
-        })?
-        .stream()
-        .await
-        .map_err(|error| {
-            anyhow::anyhow!("Failed to start streaming completion: {error}")
-        })?;
-
-    let response = Arc::new(Mutex::new(response));
-    let control: Arc<dyn StreamControl> = Arc::new(ResponseControl(response.clone()));
-
-    let state = PollState {
-        response,
-        accumulated: String::new(),
-        done: false,
-    };
-
-    let events = stream::unfold(state, |mut state| async move {
-        if state.done {
-            return None;
-        }
-
-        loop {
-            let next = {
-                let mut guard = state.response.lock().await;
-                guard.next().await
-            };
-
-            match next {
-                Some(Ok(StreamedAssistantContent::Text(text))) => {
-                    state.accumulated.push_str(&text.text);
-                    return Some((ChatEvent::Delta(text.text), state));
-                },
-                Some(Ok(StreamedAssistantContent::Reasoning(reasoning))) => {
-                    let text = reasoning_text(reasoning);
-                    if text.is_empty() {
-                        continue;
-                    }
-                    return Some((ChatEvent::Reasoning(text), state));
-                },
-                Some(Ok(StreamedAssistantContent::ReasoningDelta {
-                    reasoning, ..
-                })) => {
-                    if reasoning.is_empty() {
-                        continue;
-                    }
-                    return Some((ChatEvent::Reasoning(reasoning), state));
-                },
-                Some(Ok(StreamedAssistantContent::ToolCall { tool_call, .. })) => {
-                    let event = ChatEvent::ToolCallStarted {
-                        id: tool_call.id.clone(),
-                        name: tool_call.function.name,
-                        arguments: tool_call.function.arguments,
-                    };
-                    return Some((event, state));
-                },
-                Some(Ok(StreamedAssistantContent::Unknown(value))) => {
-                    if let Some(text) = extract_text_from_value(&value) {
-                        state.accumulated.push_str(&text);
-                        return Some((ChatEvent::Delta(text), state));
-                    }
-                    if let Some(event) = event_from_unknown_chunk(value) {
-                        return Some((event, state));
-                    }
-                    continue;
-                },
-                Some(Ok(_other)) => continue,
-                Some(Err(error)) => {
-                    state.done = true;
-                    return Some((ChatEvent::Error(error.to_string()), state));
-                },
-                None => {
-                    state.done = true;
-                    let text = state.accumulated.clone();
-                    return Some((
-                        ChatEvent::Done {
-                            text,
-                            raw: String::new(),
-                        },
-                        state,
-                    ));
-                },
-            }
-        }
-    });
-
-    Ok((events.boxed(), control))
+fn missing_final_response_error(stream_error: Option<String>) -> String {
+    stream_error
+        .unwrap_or_else(|| "stream ended before Rig reported a final response".to_string())
 }
 
-// THE FIX: Clean, closure-based state mapping. No hallucinated structs.
 #[allow(clippy::too_many_lines)]
-async fn run_tool_enabled<M>(
-    agent: rig::agent::Agent<M>,
+async fn run(
+    agent: rig::agent::Agent,
     prompt: String,
     history: Vec<RigMessage>,
     max_tool_turns: usize,
 ) -> anyhow::Result<(
     BoxStream<'static, ChatEvent>,
     Arc<dyn StreamControl>,
-)>
-where
-    M: CompletionModel + 'static,
-    M::StreamingResponse: GetTokenUsage + Clone + Unpin + Send + 'static,
-{
+)> {
     let response = agent
         .runner(prompt)
         .history(history)
@@ -460,147 +344,147 @@ where
         .stream()
         .await;
 
-    // Оборачиваем стрим в Box::pin, чтобы безопасно опрашивать его в unfold
-    let stream = Box::pin(response);
-    let control: Arc<dyn StreamControl> = Arc::new(NoopStreamControl);
-
-    // Стейт: (Стрим Rig, Накопленный текст, Флаг завершения)
-    let state = (stream, String::new(), false);
+    let (abort_handle, abort_registration) = AbortHandle::new_pair();
+    let stream = Box::pin(Abortable::new(response, abort_registration));
+    let control: Arc<dyn StreamControl> = Arc::new(ResponseControl(abort_handle));
+    let state = (stream, String::new(), false, None::<String>);
 
     let events = stream::unfold(
         state,
-        |(mut stream, mut accumulated, mut done)| async move {
+        |(mut stream, mut accumulated, mut done, mut stream_error)| async move {
             if done {
                 return None;
             }
 
             loop {
                 match stream.next().await {
-                    Some(Ok(event)) => {
-                        // Используем правильный MultiTurnStreamItem из rig-core
-                        match event {
-                            MultiTurnStreamItem::StreamAssistantItem(
-                                StreamedAssistantContent::Text(text),
-                            ) => {
-                                accumulated.push_str(&text.text);
-                                return Some((
-                                    ChatEvent::Delta(text.text),
-                                    (stream, accumulated, done),
-                                ));
-                            },
-                            MultiTurnStreamItem::StreamAssistantItem(
-                                StreamedAssistantContent::Reasoning(reasoning),
-                            ) => {
-                                let text = reasoning_text(reasoning);
-                                if text.is_empty() {
-                                    continue;
-                                }
-                                return Some((
-                                    ChatEvent::Reasoning(text),
-                                    (stream, accumulated, done),
-                                ));
-                            },
-                            MultiTurnStreamItem::StreamAssistantItem(
-                                StreamedAssistantContent::ReasoningDelta {
-                                    reasoning,
-                                    ..
-                                },
-                            ) => {
-                                if reasoning.is_empty() {
-                                    continue;
-                                }
-                                return Some((
-                                    ChatEvent::Reasoning(reasoning),
-                                    (stream, accumulated, done),
-                                ));
-                            },
-                            MultiTurnStreamItem::StreamAssistantItem(
-                                StreamedAssistantContent::ToolCall { tool_call, .. },
-                            ) => {
-                                let event = ChatEvent::ToolCallStarted {
-                                    id: tool_call.id.clone(),
-                                    name: tool_call.function.name,
-                                    arguments: tool_call.function.arguments,
-                                };
-                                return Some((event, (stream, accumulated, done)));
-                            },
-                            MultiTurnStreamItem::StreamAssistantItem(
-                                StreamedAssistantContent::Unknown(value),
-                            ) => {
-                                if let Some(text) = extract_text_from_value(&value) {
-                                    accumulated.push_str(&text);
-                                    return Some((
-                                        ChatEvent::Delta(text),
-                                        (stream, accumulated, done),
-                                    ));
-                                }
-                                if let Some(event) = event_from_unknown_chunk(value) {
-                                    return Some((event, (stream, accumulated, done)));
-                                }
+                    Some(Ok(event)) => match event {
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            StreamedAssistantContent::Text(text),
+                        ) => {
+                            accumulated.push_str(&text.text);
+                            return Some((
+                                ChatEvent::Delta(text.text),
+                                (stream, accumulated, done, stream_error),
+                            ));
+                        },
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            StreamedAssistantContent::Reasoning { reasoning, .. },
+                        ) => {
+                            let text = reasoning_text(reasoning);
+                            if text.is_empty() {
                                 continue;
+                            }
+                            return Some((
+                                ChatEvent::Reasoning(text),
+                                (stream, accumulated, done, stream_error),
+                            ));
+                        },
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            StreamedAssistantContent::ReasoningDelta {
+                                reasoning, ..
                             },
-                            MultiTurnStreamItem::StreamAssistantItem(_) => continue,
-
-                            MultiTurnStreamItem::StreamUserItem(item) => {
-                                // Здесь лежат результаты вызова инструментов
-                                let event = match &item {
-                                    StreamedUserContent::ToolResult {
-                                        tool_result,
-                                        ..
-                                    } => {
-                                        ChatEvent::ToolResultReceived {
-                                            id: tool_result.id.clone(),
-                                            // `rig_core::ToolResult` carries no tool name; the
-                                            // engine resolves it from the matching `ToolCallStarted`.
-                                            name: String::new(),
-                                            payload: serde_json::to_value(&item)
-                                                .unwrap_or_default(),
-                                        }
-                                    },
-                                    #[allow(unreachable_patterns)]
-                                    _ => ChatEvent::ToolResultReceived {
-                                        id: String::new(),
-                                        name: "tool".to_string(),
-                                        payload: serde_json::to_value(&item)
-                                            .unwrap_or_default(),
-                                    },
-                                };
-                                return Some((event, (stream, accumulated, done)));
+                        ) => {
+                            if reasoning.is_empty() {
+                                continue;
+                            }
+                            return Some((
+                                ChatEvent::Reasoning(reasoning),
+                                (stream, accumulated, done, stream_error),
+                            ));
+                        },
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            StreamedAssistantContent::ToolCall {
+                                tool_call,
+                                internal_call_id,
                             },
-                            MultiTurnStreamItem::FinalResponse(resp) => {
-                                done = true;
-                                let raw = serde_json::to_string(&resp)
-                                    .unwrap_or_else(|_| format!("{:?}", resp));
+                        ) => {
+                            let event = ChatEvent::ToolCallStarted {
+                                id: internal_call_id,
+                                name: tool_call.function.name,
+                                arguments: tool_call.function.arguments,
+                            };
+                            return Some((
+                                event,
+                                (stream, accumulated, done, stream_error),
+                            ));
+                        },
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            StreamedAssistantContent::Unknown(value),
+                        ) => {
+                            if let Some(text) = extract_text_from_value(value.value()) {
+                                accumulated.push_str(&text);
                                 return Some((
-                                    ChatEvent::Done {
-                                        text: accumulated.clone(),
-                                        raw,
-                                    },
-                                    (stream, accumulated, done),
+                                    ChatEvent::Delta(text),
+                                    (stream, accumulated, done, stream_error),
                                 ));
-                            },
-                            _ => tracing::warn!(
-                                "Unhandled MultiTurnStreamItem: {:?}",
-                                serde_json::to_string(&event).unwrap_or_default()
-                            ),
-                        }
+                            }
+                            if let Some(event) =
+                                event_from_unknown_chunk(value.value().clone())
+                            {
+                                return Some((
+                                    event,
+                                    (stream, accumulated, done, stream_error),
+                                ));
+                            }
+                            continue;
+                        },
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            StreamedAssistantContent::Final(_),
+                        )
+                        | MultiTurnStreamItem::StreamAssistantItem(
+                            StreamedAssistantContent::ToolCallDelta { .. },
+                        ) => continue,
+
+                        MultiTurnStreamItem::StreamUserItem(item) => {
+                            let event = match item {
+                                StreamedUserContent::ToolResult {
+                                    tool_result,
+                                    internal_call_id,
+                                } => ChatEvent::ToolResultReceived {
+                                    id: internal_call_id,
+                                    name: tool_result.name.clone(),
+                                    payload: serde_json::to_value(tool_result)
+                                        .unwrap_or_default(),
+                                },
+                            };
+                            return Some((
+                                event,
+                                (stream, accumulated, done, stream_error),
+                            ));
+                        },
+                        MultiTurnStreamItem::ToolExecutionCommitted { .. }
+                        | MultiTurnStreamItem::ModelTurnRetried { .. } => continue,
+                        MultiTurnStreamItem::CompletionCall(completion_call) => {
+                            let mut usage = ConversationUsage::default();
+                            usage.add(completion_call.usage);
+                            return Some((
+                                ChatEvent::Usage(usage),
+                                (stream, accumulated, done, stream_error),
+                            ));
+                        },
+                        MultiTurnStreamItem::FinalResponse(resp) => {
+                            done = true;
+                            let raw = serde_json::to_string(&resp)
+                                .unwrap_or_else(|_| format!("{:?}", resp));
+                            return Some((
+                                ChatEvent::Done {
+                                    text: accumulated.clone(),
+                                    raw,
+                                },
+                                (stream, accumulated, done, stream_error),
+                            ));
+                        },
                     },
                     Some(Err(error)) => {
-                        done = true;
-                        // Ошибка выведется сама благодаря type inference
-                        return Some((
-                            ChatEvent::Error(error.to_string()),
-                            (stream, accumulated, done),
-                        ));
+                        stream_error = Some(error.to_string());
                     },
                     None => {
                         done = true;
+                        let error = missing_final_response_error(stream_error);
                         return Some((
-                            ChatEvent::Done {
-                                text: accumulated.clone(),
-                                raw: String::new(),
-                            },
-                            (stream, accumulated, done),
+                            ChatEvent::Error(error),
+                            (stream, accumulated, done, None),
                         ));
                     },
                 }
@@ -637,6 +521,22 @@ mod tests {
             }
             .kind(),
             ProviderKind::Ollama
+        );
+    }
+
+    #[test]
+    fn stream_without_final_response_is_reported_as_truncated() {
+        assert_eq!(
+            missing_final_response_error(None),
+            "stream ended before Rig reported a final response"
+        );
+    }
+
+    #[test]
+    fn stream_error_is_preserved_when_no_final_response_arrives() {
+        assert_eq!(
+            missing_final_response_error(Some("connection lost".to_string())),
+            "connection lost"
         );
     }
 }

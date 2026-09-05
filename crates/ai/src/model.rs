@@ -59,6 +59,29 @@ impl Message {
     }
 }
 
+/// Aggregate token usage across all model calls made for one conversation.
+/// This is persisted separately from messages so old conversation archives stay readable.
+#[derive(Debug, Clone, Default, Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConversationUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub reasoning_tokens: u64,
+}
+
+impl ConversationUsage {
+    pub fn add(&mut self, usage: rig::completion::Usage) {
+        self.input_tokens += usage.input_tokens;
+        self.output_tokens += usage.output_tokens;
+        self.total_tokens += usage.total_tokens;
+        self.cached_input_tokens += usage.cached_input_tokens;
+        self.cache_creation_input_tokens += usage.cache_creation_input_tokens;
+        self.reasoning_tokens += usage.reasoning_tokens;
+    }
+}
+
 /// Supported LLM providers, user-selectable in settings.
 #[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ProviderKind {
@@ -185,6 +208,24 @@ mod tests {
         assert_eq!(message.role, Role::User);
         assert_eq!(message.content, "hello");
         assert_eq!(message.status, MessageStatus::Complete);
+    }
+
+    #[test]
+    fn conversation_usage_accumulates_rig_usage() {
+        let mut aggregate = ConversationUsage::default();
+        aggregate.add(rig::completion::Usage {
+            input_tokens: 10,
+            output_tokens: 5,
+            total_tokens: 15,
+            cached_input_tokens: 2,
+            cache_creation_input_tokens: 3,
+            tool_use_prompt_tokens: 0,
+            reasoning_tokens: 4,
+        });
+
+        assert_eq!(aggregate.total_tokens, 15);
+        assert_eq!(aggregate.reasoning_tokens, 4);
+        assert_eq!(aggregate.cached_input_tokens, 2);
     }
 
     #[test]

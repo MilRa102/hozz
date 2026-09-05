@@ -36,7 +36,11 @@ impl Tool for ProfileListTool {
         })
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        _args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let profiles = self
             .orch
             .profiles

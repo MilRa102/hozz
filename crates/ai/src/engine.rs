@@ -7,9 +7,9 @@ use tokio::sync::{Mutex, broadcast, watch};
 
 use crate::{
     control::{StreamCommand, StreamControl},
-    model::{Message, MessageStatus, Role},
+    model::{ConversationUsage, Message, MessageStatus, Role},
     provider::{self, ChatEvent, ProviderConfig},
-    store::{ConversationStore, MessageStore},
+    store::{ConversationStore, ConversationUsageStore, MessageStore},
 };
 
 /// Live snapshot of an in-flight generation, published on every text delta so
@@ -220,6 +220,7 @@ impl GenerationManager {
             let mut was_cancelled = false;
             let mut last_raw = "{}".to_string();
             let mut last_error: Option<String> = None;
+            let mut usage = ConversationUsage::default();
 
             // 3. Цикл получения чанков с неблокирующим перехватом отмены через select!
             loop {
@@ -298,12 +299,24 @@ impl GenerationManager {
                                 let msg = Message::new(Role::Tool, format!("Tool result: {resolved_name}"), raw);
                                 let _ = history_store.append(&conv_id, &msg);
                             }
+                            Some(ChatEvent::Usage(call_usage)) => {
+                                usage.input_tokens += call_usage.input_tokens;
+                                usage.output_tokens += call_usage.output_tokens;
+                                usage.total_tokens += call_usage.total_tokens;
+                                usage.cached_input_tokens += call_usage.cached_input_tokens;
+                                usage.cache_creation_input_tokens += call_usage.cache_creation_input_tokens;
+                                usage.reasoning_tokens += call_usage.reasoning_tokens;
+                            }
                             Some(ChatEvent::Done { text, raw }) => {
                                 snapshot.text = text.clone();
                                 last_raw = raw;
                                 break;
                             }
                             Some(ChatEvent::Error(err)) => {
+                                if *cancel_rx.borrow() {
+                                    was_cancelled = true;
+                                    break;
+                                }
                                 last_error = Some(err.clone());
                                 snapshot.status = GenerationStatus::Error(err.clone());
                                 let _ = snapshot_tx.send(snapshot.clone());
@@ -342,6 +355,22 @@ impl GenerationManager {
             if !snapshot.text.is_empty() || was_cancelled {
                 let msg = Message::new(Role::Assistant, snapshot.text, last_raw);
                 let _ = history_store.append(&conv_id, &msg);
+            }
+
+            if usage.total_tokens > 0 {
+                let usage_store = ConversationUsageStore;
+                let mut aggregate = usage_store
+                    .find(&conv_id)
+                    .unwrap_or_default()
+                    .unwrap_or_default();
+                aggregate.input_tokens += usage.input_tokens;
+                aggregate.output_tokens += usage.output_tokens;
+                aggregate.total_tokens += usage.total_tokens;
+                aggregate.cached_input_tokens += usage.cached_input_tokens;
+                aggregate.cache_creation_input_tokens +=
+                    usage.cache_creation_input_tokens;
+                aggregate.reasoning_tokens += usage.reasoning_tokens;
+                let _ = usage_store.upsert(&conv_id, &aggregate);
             }
 
             active_map.lock().await.remove(&conv_id);

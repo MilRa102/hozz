@@ -69,7 +69,8 @@ pub async fn generate_title(
             provider::ChatEvent::Error(err) => anyhow::bail!(err),
             provider::ChatEvent::Reasoning(_)
             | provider::ChatEvent::ToolCallStarted { .. }
-            | provider::ChatEvent::ToolResultReceived { .. } => {},
+            | provider::ChatEvent::ToolResultReceived { .. }
+            | provider::ChatEvent::Usage(_) => {},
         }
     }
 

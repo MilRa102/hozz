@@ -24,7 +24,7 @@ interprocess = "2.4.3"
 hex = "0.4"
 machine-uid = "0.6"
 reqwest = { version = "0.13.4", features = ["json", "stream"] }
-rig = "0.40.0"
+rig = "0.42.0"
 rkyv = { version = "0.8.17", features = ["bytecheck"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }

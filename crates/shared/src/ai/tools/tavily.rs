@@ -3,9 +3,9 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 
 use super::common::{
-    AiToolError, TavilyExtractArgs, TavilyExtractFailedResultOutput,
-    TavilyExtractOutput, TavilyExtractResultOutput, TavilySearchArgs,
-    TavilySearchOutput, TavilySearchResultOutput,
+    AiToolError, TavilyExtractArgs, TavilyExtractFailedResultOutput, TavilyExtractOutput,
+    TavilyExtractResultOutput, TavilySearchArgs, TavilySearchOutput,
+    TavilySearchResultOutput,
 };
 
 #[derive(Clone)]
@@ -110,7 +110,11 @@ impl Tool for TavilySearchTool {
         })
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let query = args.query.trim();
         if query.is_empty() {
             return Err(AiToolError("query must not be empty".to_string()));
@@ -118,12 +122,24 @@ impl Tool for TavilySearchTool {
 
         let request = TavilyRequest {
             query: query.to_string(),
-            search_depth: args.search_depth.as_deref().filter(|depth| !depth.trim().is_empty()).map(str::to_string),
-            topic: args.topic.as_deref().filter(|topic| !topic.trim().is_empty()).map(str::to_string),
+            search_depth: args
+                .search_depth
+                .as_deref()
+                .filter(|depth| !depth.trim().is_empty())
+                .map(str::to_string),
+            topic: args
+                .topic
+                .as_deref()
+                .filter(|topic| !topic.trim().is_empty())
+                .map(str::to_string),
             max_results: args.max_results,
             include_domains: args.include_domains,
             exclude_domains: args.exclude_domains,
-            time_range: args.time_range.as_deref().filter(|range| !range.trim().is_empty()).map(str::to_string),
+            time_range: args
+                .time_range
+                .as_deref()
+                .filter(|range| !range.trim().is_empty())
+                .map(str::to_string),
         };
 
         let client = RestClient::builder()
@@ -233,15 +249,30 @@ impl Tool for TavilyExtractTool {
         })
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let urls = args.urls.into_iter().map(|url| url.trim().to_string()).filter(|url| !url.is_empty()).collect::<Vec<_>>();
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
+        let urls = args
+            .urls
+            .into_iter()
+            .map(|url| url.trim().to_string())
+            .filter(|url| !url.is_empty())
+            .collect::<Vec<_>>();
         if urls.is_empty() {
-            return Err(AiToolError("urls must contain at least one non-empty URL".to_string()));
+            return Err(AiToolError(
+                "urls must contain at least one non-empty URL".to_string(),
+            ));
         }
 
         let request = TavilyExtractRequest {
             urls: urls.clone(),
-            query: args.query.as_deref().filter(|value| !value.trim().is_empty()).map(str::to_string),
+            query: args
+                .query
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string),
             extract_depth: Some("basic".to_string()),
             format: Some("markdown".to_string()),
         };
