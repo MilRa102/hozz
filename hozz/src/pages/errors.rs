@@ -1,7 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_alert_icons::MdWarning;
-
-use crate::utils::Icon;
+use dioxus_icons::lucide::TriangleAlert;
 
 #[component]
 pub(crate) fn ErrorScreen(err: String, on_retry: EventHandler<()>) -> Element {
@@ -18,7 +16,7 @@ pub(crate) fn ErrorScreen(err: String, on_retry: EventHandler<()>) -> Element {
                     div { class: "w-10 h-10 bg-rose-500/10 rounded-lg flex items-center justify-center border border-rose-500/20 shrink-0",
                         span { class: "text-2xl text-rose-400 flex items-center",
                             // В Dioxus лучше управлять цветом через классы обертки (text-rose-400), если иконка это наследует
-                            Icon { icon: MdWarning }
+                            TriangleAlert {}
                         }
                     }
                     h1 { class: "text-zinc-50 text-lg font-semibold tracking-wide",

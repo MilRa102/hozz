@@ -1,7 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_action_icons::MdHome;
-
-use crate::utils::Icon;
+use dioxus_icons::lucide::House;
 
 #[component]
 pub fn VaultBreadcrumbs(
@@ -14,7 +12,7 @@ pub fn VaultBreadcrumbs(
             button {
                 class: "p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50 rounded-md transition-all cursor-pointer",
                 onclick: move |e| on_reset.call(e),
-                Icon { icon: MdHome, size: 16 }
+                House { size: "16px" }
             }
             if !selected_mount.is_empty() {
                 span { class: "text-zinc-700", "/" }

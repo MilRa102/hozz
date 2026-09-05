@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_action_icons::MdLock;
+use dioxus_icons::lucide::Lock;
 use shared::apps::{
     LoggingLayer, Orchestrator,
     vault::{SecretManager, TokenInfo, VaultConfig},
 };
 
-use crate::{components::pet::ZeroError, utils::Icon};
+use crate::components::pet::ZeroError;
 
 #[component]
 pub fn VaultSignIn(on_sign: EventHandler<(VaultConfig, TokenInfo)>) -> Element {
@@ -60,7 +60,7 @@ pub fn VaultSignIn(on_sign: EventHandler<(VaultConfig, TokenInfo)>) -> Element {
                             }
                     } else {
                         div { class: "w-12 h-12 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center mb-5 shadow-sm transition-all",
-                            Icon { icon: MdLock, size: 22, class: "text-zinc-100" }
+                            Lock { size: "22px", class: "text-zinc-100" }
                         }
                         h2 { class: "text-xl font-semibold text-zinc-50 tracking-tight", "Вход в хранилище" }
                         p { class: "text-sm text-zinc-400 mt-1.5 text-center", "Подключитесь к вашему HashiCorp Vault" }

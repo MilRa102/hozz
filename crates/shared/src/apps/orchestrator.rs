@@ -110,12 +110,6 @@ impl Orchestrator {
     /// - Database initialization fails.
     /// - The core binary download fails (though this is logged as a warning, not a fatal error).
     /// - The orchestrator has already been initialized (singleton violation).
-    ///
-    /// # Example
-    /// ```no_run
-    /// use shared::app::orchestrator::Orchestrator;
-    /// let orch = Orchestrator::init().await.unwrap();
-    /// ```
     pub async fn init() -> anyhow::Result<Arc<Self>> {
         let conf = &*CONF;
 

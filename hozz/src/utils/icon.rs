@@ -1,26 +1,7 @@
 use std::sync::Arc;
 
-use dioxus::prelude::*;
-use dioxus_free_icons::{Icon as DxIcon, IconShape};
+use dioxus::logger::tracing::error;
 use image::GenericImageView;
-
-// Material Design Icon Component
-#[component]
-pub fn Icon<T: IconShape + Clone + PartialEq + 'static>(
-    icon: T,
-    #[props(default = 24)] size: u32,
-    #[props(default = "white")] color: &'static str,
-    #[props(default = "")] class: &'static str,
-) -> Element {
-    let fill = color.to_string();
-    rsx! {DxIcon {
-        class: class,
-        width: size,
-        height: size,
-        fill: "{fill}",
-        icon: icon,
-    }}
-}
 
 // App Icon
 pub(crate) struct AppIcon {

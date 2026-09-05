@@ -1,8 +1,6 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_action_icons::MdLockOutline;
+use dioxus_icons::lucide::Lock;
 use shared::apps::vault::SecretVisit;
-
-use crate::utils::Icon;
 
 #[component]
 pub fn VaultQuickAccess(
@@ -22,7 +20,7 @@ pub fn VaultQuickAccess(
                             let p = visit.path.clone();
                             move |_| on_jump.call((m.clone(), p.clone()))
                         },
-                        Icon { icon: MdLockOutline, size: 12, class: "opacity-70" }
+                        Lock { size: "12px", class: "opacity-70" }
                         span { class: "font-mono truncate max-w-[120px]", "{visit.path.split('/').last().unwrap_or(&visit.path)}" }
                     }
                 }

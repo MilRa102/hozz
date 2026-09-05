@@ -1,12 +1,6 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::{
-    io_icons::IoFlash,
-    md_action_icons::MdDelete,
-    md_notification_icons::{MdPower, MdPowerOff, MdSync},
-};
+use dioxus_icons::lucide::{Power, PowerOff, RefreshCw, Trash2, Zap};
 use shared::apps::{Profile, Source};
-
-use crate::utils::Icon;
 
 #[component]
 pub(crate) fn ProfileItem(
@@ -48,7 +42,7 @@ pub(crate) fn ProfileItem(
 
             div { class: "flex items-center gap-3 {updating_animate}",
                 if !is_enabled {
-                    Icon { icon: MdPowerOff, size: 18 }
+                    PowerOff { size: "18px" }
                 }
                 div { class: "flex flex-col",
                     div { class: "flex items-center gap-2",
@@ -74,7 +68,7 @@ pub(crate) fn ProfileItem(
                     if is_updating {
                         div { class: "w-5 h-5 border-2 border-zinc-800 border-t-zinc-300 rounded-full animate-spin" }
                     } else {
-                        Icon { icon: MdSync, size: 16 }
+                        RefreshCw { size: "16px" }
                     }
                 }
 
@@ -88,7 +82,7 @@ pub(crate) fn ProfileItem(
                     if is_updating {
                         div { class: "w-5 h-5 border-2 border-zinc-800 border-t-zinc-300 rounded-full animate-spin" }
                     } else {
-                        Icon { icon: IoFlash, size: 16 }
+                        Zap { size: "16px" }
                     }
                 }
 
@@ -104,9 +98,9 @@ pub(crate) fn ProfileItem(
                         div { class: "w-5 h-5 border-2 border-zinc-800 border-t-zinc-300 rounded-full animate-spin" }
                     } else {
                         if is_enabled {
-                            Icon { icon: MdPowerOff, size: 16 }
+                            PowerOff { size: "16px" }
                         } else {
-                            Icon { icon: MdPower, size: 16 }
+                            Power { size: "16px" }
                         }
                     }
                 }
@@ -117,7 +111,7 @@ pub(crate) fn ProfileItem(
                     disabled: is_updating,
                     title: "Удалить профиль",
                     onclick: move |_| ondelete.call(profile_delete_id.clone()),
-                    Icon { icon: MdDelete, size: 16 }
+                    Trash2 { size: "16px" }
                 }
             }
         }

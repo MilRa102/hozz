@@ -1,10 +1,6 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::{
-    LdArrowLeft, LdDatabase, LdFolderClosed, LdKey,
-};
+use dioxus_icons::lucide::{ArrowLeft, Database, FolderClosed, Key};
 use shared::apps::vault::{SecretItem, SecretType};
-
-use crate::utils::Icon;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct VaultDirectoryListProps {
@@ -25,7 +21,7 @@ pub fn VaultDirectoryList(props: VaultDirectoryListProps) -> Element {
                 div {
                     class: "flex items-center px-4 py-2.5 text-zinc-500 hover:bg-zinc-800/30 cursor-pointer transition-colors",
                     onclick: move |e| props.on_back.call(e),
-                    Icon { icon: LdArrowLeft, size: 14, class: "text-zinc-500" }
+                    ArrowLeft { size: "14px", class: "text-zinc-500" }
                     span { class: "ml-3 font-mono text-sm", ".." }
                 }
             }
@@ -52,11 +48,11 @@ pub fn VaultDirectoryList(props: VaultDirectoryListProps) -> Element {
                         },
                         div { class: "w-6 flex justify-center shrink-0",
                             if props.is_mount_level {
-                                Icon { icon: LdDatabase, size: 15, class: "text-zinc-500 group-hover:text-zinc-300 transition-colors" }
+                                Database { size: "15px", class: "text-zinc-500 group-hover:text-zinc-300 transition-colors" }
                             } else if item.secret_type == SecretType::Folder {
-                                Icon { icon: LdFolderClosed, size: 15, class: "text-zinc-500 group-hover:text-zinc-300 transition-colors" }
+                                FolderClosed { size: "15px", class: "text-zinc-500 group-hover:text-zinc-300 transition-colors" }
                             } else {
-                                Icon { icon: LdKey, size: 15, class: "text-zinc-600 group-hover:text-zinc-400 transition-colors" }
+                                Key { size: "15px", class: "text-zinc-600 group-hover:text-zinc-400 transition-colors" }
                             }
                         }
                         span { class: "ml-3 text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors", "{item.name}" }

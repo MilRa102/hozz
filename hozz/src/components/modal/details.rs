@@ -1,7 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_navigation_icons::MdClose;
-
-use crate::utils::Icon;
+use dioxus_icons::lucide::X;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct ModalProps {
@@ -52,7 +50,7 @@ pub fn ModalDetails(props: ModalProps) -> Element {
                     button {
                         class: "shrink-0 p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 rounded-md transition-colors focus:outline-none cursor-pointer",
                         onclick: move |_| props.on_close.call(()),
-                        Icon { icon: MdClose, size: 20 }
+                        X { size: "20px" }
                     }
                 }
 

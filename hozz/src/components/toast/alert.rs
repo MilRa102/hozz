@@ -1,15 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::{
-    md_action_icons::{MdDone, MdInfo},
-    md_alert_icons::{MdError, MdWarning},
-    md_navigation_icons::MdClose,
-};
+use dioxus_icons::lucide::{Check, CircleAlert, Info, TriangleAlert, X};
 use shared::apps::{Alert, Orchestrator};
 use tokio::time::sleep;
-
-use crate::utils::Icon;
 
 #[component]
 pub(crate) fn Toaster() -> Element {
@@ -67,31 +61,19 @@ fn ToastItem(alert: Alert, on_remove: EventHandler<String>) -> Element {
     let (border_color, icon_elem) = match &alert {
         Alert::Error { .. } => (
             "border-l-red-500",
-            rsx!(Icon {
-                icon: MdError,
-                color: "#ef4444"
-            }), // red-500
+            rsx!(CircleAlert { class: "text-red-500" }),
         ),
         Alert::Ok { .. } => (
             "border-l-emerald-500",
-            rsx!(Icon {
-                icon: MdDone,
-                color: "#10b981"
-            }), // emerald-500
+            rsx!(Check { class: "text-emerald-500" }),
         ),
         Alert::Warning { .. } => (
             "border-l-amber-500",
-            rsx!(Icon {
-                icon: MdWarning,
-                color: "#f59e0b"
-            }), // amber-500
+            rsx!(TriangleAlert { class: "text-amber-500" }),
         ),
         Alert::Info { .. } => (
             "border-l-blue-500",
-            rsx!(Icon {
-                icon: MdInfo,
-                color: "#3b82f6"
-            }), // blue-500
+            rsx!(Info { class: "text-blue-500" }),
         ),
     };
 
@@ -109,7 +91,7 @@ fn ToastItem(alert: Alert, on_remove: EventHandler<String>) -> Element {
                 onclick: move |_| {
                     remove_once(id.to_string());
                 },
-                Icon { icon: MdClose, color: "#a1a1aa" } // zinc-400
+                X { class: "text-zinc-400" }
             }
         }
     }

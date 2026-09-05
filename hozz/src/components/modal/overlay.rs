@@ -1,9 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::{
-    md_action_icons::MdInfoOutline, md_navigation_icons::MdClose,
-};
-
-use crate::utils::Icon;
+use dioxus_icons::lucide::{Info, X};
 
 #[component]
 pub fn ModalOverlay(
@@ -30,7 +26,7 @@ pub fn ModalOverlay(
                         button {
                             class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors",
                             onclick: move |_| on_close.call(()),
-                            Icon { icon: MdClose, size: 18 }
+                            X { size: "18px" }
                         }
                     }
                 }
@@ -42,7 +38,7 @@ pub fn ModalOverlay(
                 if !footer_text.is_empty() {
                     div { class: "px-6 py-3 bg-zinc-900/50 border-t border-zinc-800 shrink-0",
                         p { class: "text-[11px] text-zinc-500 flex items-center justify-center gap-1.5",
-                            Icon { icon: MdInfoOutline, size: 13 }
+                            Info { size: "13px" }
                             "{footer_text}"
                         }
                     }

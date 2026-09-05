@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_action_icons::MdLogout;
+use dioxus_icons::lucide::LogOut;
 use shared::apps::vault::TokenInfo;
 
 use crate::{
@@ -7,7 +7,6 @@ use crate::{
         button::{ActionButton, ButtonVariant},
         card::PanelCard,
     },
-    utils::Icon,
 };
 
 #[component]
@@ -30,7 +29,7 @@ pub fn VaultSessionBar(info: TokenInfo, on_logout: EventHandler<MouseEvent>) -> 
                 ActionButton {
                     variant: ButtonVariant::Danger,
                     onclick: move |e| on_logout.call(e),
-                    Icon { icon: MdLogout, size: 14 }
+                    LogOut { size: "14px" }
                     "Завершить"
                 }
             }

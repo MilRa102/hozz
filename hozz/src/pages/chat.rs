@@ -13,17 +13,16 @@ use ai::{
     MessageStore, ProviderConfig, ProviderKind, Role, ToolCallStatus,
 };
 use dioxus::{document::eval, logger::tracing, prelude::*};
-use dioxus_free_icons::icons::{md_action_icons::MdDone, md_alert_icons::MdError};
 use dioxus_icons::lucide::{
-    CircleStop, Loader, MessageCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen,
-    PenTool, Send, Sparkles, Trash2,
+    Check, CircleAlert, CircleStop, Loader, MessageCircle, Maximize2, Minimize2, PanelLeftClose,
+    PanelLeftOpen, PenTool, Send, Sparkles, Trash2,
 };
 use shared::{
     ai::AiRegistry,
     apps::{LoggingLayer, Orchestrator},
 };
 
-use crate::{components::message::MarkdownMessage, utils::Icon};
+use crate::components::message::MarkdownMessage;
 
 /// Преобразует JSON-значение в строку, чтобы его можно было показать в карточке деталей инструмента.
 fn value_to_text(value: &serde_json::Value) -> String {
@@ -643,19 +642,11 @@ mod chat_area {
         let (status_icon, status_label) = match group.status {
             ToolCallStatus::Running => (rsx!(Loader { size: "13px" }), "вызов"),
             ToolCallStatus::Success => (
-                rsx!(Icon {
-                    icon: MdDone,
-                    size: 13,
-                    color: "#34d399"
-                }),
+                rsx!(Check { size: "13px", class: "text-emerald-400" }),
                 "готово",
             ),
             ToolCallStatus::Error => (
-                rsx!(Icon {
-                    icon: MdError,
-                    size: 13,
-                    color: "#fb7185"
-                }),
+                rsx!(CircleAlert { size: "13px", class: "text-rose-400" }),
                 "ошибка",
             ),
         };

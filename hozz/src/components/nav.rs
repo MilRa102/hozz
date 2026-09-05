@@ -1,18 +1,13 @@
 use std::sync::Arc;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::{
-    md_action_icons::{MdLanguage, MdLock, MdSettings},
-    md_communication_icons::MdChat,
-    md_hardware_icons::MdSecurity,
-    md_navigation_icons::MdMenu,
-};
+use dioxus_icons::lucide::{Globe, Lock, Menu, MessageCircle, Settings, Shield};
 use shared::apps::{
     Orchestrator, PrefsManager,
     prefs::{ChatCapability, VaultCapability},
 };
 
-use crate::{route::Route, utils::Icon};
+use crate::route::Route;
 
 #[component]
 pub fn Navbar() -> Element {
@@ -47,12 +42,12 @@ pub fn Navbar() -> Element {
                     } else {
                         div { class: "h-px bg-white/10 my-4 mx-2" }
                     }
-                    NavItem { to: Route::ProxyDashboard {}, icon: rsx!(Icon { icon: MdLanguage }), label: "Прокси", is_expanded: is_expanded() }
-                    NavItem { to: Route::Home {}, icon: rsx!(Icon { icon: MdSecurity }), label: "Политики", is_expanded: is_expanded() }
+                    NavItem { to: Route::ProxyDashboard {}, icon: rsx!(Globe {}), label: "Прокси", is_expanded: is_expanded() }
+                    NavItem { to: Route::Home {}, icon: rsx!(Shield {}), label: "Политики", is_expanded: is_expanded() }
                     if is_admin || arch.preference_is_active::<ChatCapability>() {
                         NavItem {
                             to: Route::ChatPage {},
-                            icon: rsx!(Icon { icon: MdChat }),
+                            icon: rsx!(MessageCircle {}),
                             label: "Чат",
                             is_expanded: is_expanded(),
                         }
@@ -67,7 +62,7 @@ pub fn Navbar() -> Element {
                         }
                     }
                     if is_admin || arch.preference_is_active::<VaultCapability>() {
-                        NavItem { to: Route::VaultPage {}, icon: rsx!(Icon { icon: MdLock }), label: "Хранилище", is_expanded: is_expanded() }
+                        NavItem { to: Route::VaultPage {}, icon: rsx!(Lock {}), label: "Хранилище", is_expanded: is_expanded() }
                     }
 
                     // ГРУППА: ПРОДВИНУТЫЕ
@@ -76,7 +71,7 @@ pub fn Navbar() -> Element {
                     } else {
                         div { class: "h-px bg-white/10 my-4 mx-2" }
                     }
-                    NavItem { to: Route::SettingsView {}, icon: rsx!(Icon { icon: MdSettings }), label: "Настройки", is_expanded: is_expanded() }
+                    NavItem { to: Route::SettingsView {}, icon: rsx!(Settings {}), label: "Настройки", is_expanded: is_expanded() }
                 }
             }
 
@@ -91,7 +86,7 @@ pub fn Navbar() -> Element {
                             class: "p-2 hover:bg-white/10 rounded-md transition-colors text-zinc-500 hover:text-zinc-300 cursor-pointer",
                             onclick: move |_| is_expanded.set(!is_expanded()),
                             title: if is_expanded() { "Свернуть меню" } else { "Развернуть меню" },
-                            Icon { icon: MdMenu, size: 20 }
+                            Menu { size: "20px" }
                         }
                         span { class: "font-medium text-zinc-400 hidden sm:block cursor-default", if is_expanded() { "Свернуть меню" } else { "Развернуть меню" } }
                     }

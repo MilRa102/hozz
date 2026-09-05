@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use dioxus::{logger::tracing, prelude::*};
-use dioxus_free_icons::icons::md_action_icons::MdAnchor;
+use dioxus_icons::lucide::Anchor;
 use prefs::{Category, SettingMeta};
 use shared::apps::{LoggingLayer, Orchestrator, PrefsManager};
 
@@ -11,7 +11,6 @@ use crate::{
         pet::{ZeroEmpty, ZeroMasked},
         switch::SettingRow,
     },
-    utils::Icon,
 };
 
 // Для удобства перебора категорий в UI
@@ -112,7 +111,7 @@ pub fn SettingsView() -> Element {
                                     let clean_tag = tag.replace("[", "").replace("]", "");
                                     search_query.set(clean_tag);
                                 },
-                                Icon { icon: MdAnchor, size: 12, class: "opacity-70" }
+                                Anchor { size: "12px", class: "opacity-70" }
                                 span { class: "font-mono truncate max-w-[120px]", "{tag}" }
                             }
                         }

@@ -1,12 +1,8 @@
 use std::sync::Arc;
 
 use dioxus::{desktop::use_window, prelude::*};
-use dioxus_free_icons::icons::{
-    md_content_icons::MdRemove, md_navigation_icons::MdClose,
-};
+use dioxus_icons::lucide::{Minus, X};
 use shared::apps::Orchestrator;
-
-use crate::utils::Icon;
 
 #[component]
 pub(crate) fn TitleBar() -> Element {
@@ -33,7 +29,7 @@ pub(crate) fn TitleBar() -> Element {
                     class: "px-4 h-full flex items-center justify-center text-zinc-500 hover:bg-white/10 hover:text-zinc-300 transition-colors",
                     onmousedown: move |evt| evt.stop_propagation(),
                     onclick: move |_| window_minimized.set_minimized(true),
-                    Icon { icon: MdRemove, size: 16 }
+                    Minus { size: "16px" }
                 }
 
                 // Кнопка Закрыть -> Спрятать в трей
@@ -44,7 +40,7 @@ pub(crate) fn TitleBar() -> Element {
                         window_close.set_visible(false);
                         arch.set_active(false);
                     },
-                    Icon { icon: MdClose, size: 16 }
+                    X { size: "16px" }
                 }
             }
         }

@@ -45,13 +45,6 @@ pub fn format_bytes(bytes: u64) -> String {
 ///
 /// # Returns
 /// String as a hash
-///
-/// # Example
-/// ```
-/// use shared::utils::generate_id();
-/// let hash = generate_id("example");
-/// assert_eq!(hash.len(), 16);
-/// ```
 #[must_use]
 pub fn generate_id(value: &str) -> String {
     let mut hasher = Sha256::new();

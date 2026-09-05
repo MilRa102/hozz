@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::io_icons::{IoArrowDown, IoArrowUp};
+use dioxus_icons::lucide::{ArrowDown, ArrowUp};
 
 use crate::{
     components::{
@@ -74,8 +74,8 @@ pub fn ProxyDashboard() -> Element {
                 div { class: "flex items-center gap-8",
                     if connected() {
                         div { class: "flex gap-6",
-                            MetricLabel { icon: IoArrowDown, value: traffic_up(), label: "DL" }
-                            MetricLabel { icon: IoArrowUp, value: traffic_down(), label: "UL" }
+                            MetricLabel { icon: rsx!(ArrowDown { size: "16px" }), value: traffic_up(), label: "DL" }
+                            MetricLabel { icon: rsx!(ArrowUp { size: "16px" }), value: traffic_down(), label: "UL" }
                         }
                     }
 

@@ -1,7 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_navigation_icons::MdArrowDropDown;
-
-use crate::utils::Icon;
+use dioxus_icons::lucide::ChevronDown;
 
 #[derive(Props, Clone, PartialEq)]
 pub(crate) struct DropdownProps {
@@ -35,7 +33,7 @@ pub(crate) fn DropdownList(props: DropdownProps) -> Element {
                     span { class: "text-xs text-zinc-500 font-medium", "{label}" }
                 }
                 div { class: "text-zinc-500 transition-transform duration-200 {transform}",
-                    Icon { icon: MdArrowDropDown, size: 20 }
+                    ChevronDown { size: "20px" }
                 }
             }
 

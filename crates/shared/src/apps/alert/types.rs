@@ -16,11 +16,6 @@ impl Alert {
     ///
     /// # Returns
     /// Message object
-    ///
-    /// # Example
-    /// ```
-    /// Alert::info("This is an info message");
-    /// ```
     pub fn info(msg: impl Into<String>) -> Self {
         Self::Info {
             id: Uuid::new_v4(),
@@ -35,11 +30,6 @@ impl Alert {
     ///
     /// # Returns
     /// Message object
-    ///
-    /// # Example
-    /// ```
-    /// Alert::error("Unidentified error");
-    /// ```
     pub fn error(msg: impl Into<String>) -> Self {
         Self::Error {
             id: Uuid::new_v4(),
@@ -54,11 +44,6 @@ impl Alert {
     ///
     /// # Returns
     /// Message object
-    ///
-    /// # Example
-    /// ```
-    /// Alert::warning("Something is wrong");
-    /// ```
     pub fn warning(msg: impl Into<String>) -> Self {
         Self::Warning {
             id: Uuid::new_v4(),
@@ -73,11 +58,6 @@ impl Alert {
     ///
     /// # Returns
     /// Message object
-    ///
-    /// # Example
-    /// ```
-    /// Alert::ok("Everything is fine");
-    /// ```
     pub fn ok(msg: impl Into<String>) -> Self {
         Self::Ok {
             id: Uuid::new_v4(),
@@ -89,11 +69,6 @@ impl Alert {
     ///
     /// # Returns
     /// Object ID
-    ///
-    /// # Example
-    /// ```
-    /// Alert::ok("Everything is fine").id();
-    /// ```
     pub fn id(&self) -> Uuid {
         match self {
             Self::Info { id, .. }
@@ -107,11 +82,6 @@ impl Alert {
     ///
     /// # Returns
     /// Receive messages
-    ///
-    /// # Example
-    /// ```
-    /// Alert::ok("Everything is fine").message();
-    /// ```
     pub fn message(&self) -> &str {
         match self {
             Self::Info { msg, .. }

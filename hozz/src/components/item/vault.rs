@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::{LdCheck, LdCopy, LdEye, LdEyeOff};
+use dioxus_icons::lucide::{Check, Copy, Eye, EyeOff};
 use tokio::time::sleep;
 
-use crate::utils::{Icon, to_clipboard};
+use crate::utils::to_clipboard;
 
 #[component]
 pub(crate) fn SecretEntry(key_name: String, value: String) -> Element {
@@ -31,16 +31,16 @@ pub(crate) fn SecretEntry(key_name: String, value: String) -> Element {
                         class: "p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-md transition-colors",
                         title: "Показать значение",
                         onclick: move |e| { e.stop_propagation(); is_revealed.set(!is_revealed()); },
-                        if is_revealed() { Icon { icon: LdEyeOff, size: 14 } } else { Icon { icon: LdEye, size: 14 } }
+                        if is_revealed() { EyeOff { size: "14px" } } else { Eye { size: "14px" } }
                     }
                     button {
                         class: "p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-md transition-colors",
                         title: if is_copied() { "Скопировано!" } else { "Копировать" },
                         onclick: move |e| { e.stop_propagation(); handle_copy(value.clone()); },
                         if is_copied() {
-                            Icon { icon: LdCheck, size: 14 }
+                            Check { size: "14px" }
                         } else {
-                            Icon { icon: LdCopy, size: 14 }
+                            Copy { size: "14px" }
                         }
                     }
                 }

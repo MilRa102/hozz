@@ -1,9 +1,7 @@
 use std::{cmp::Reverse, sync::Arc, time::Duration};
 
 use dioxus::{logger::tracing, prelude::*};
-use dioxus_free_icons::icons::{
-    md_content_icons::MdContentCopy, md_navigation_icons::MdCheck,
-};
+use dioxus_icons::lucide::{Check, Copy};
 use shared::{
     apps::{LoggingLayer, Orchestrator},
     core::models::rule::{Direction, Rule},
@@ -12,7 +10,7 @@ use tokio::task::spawn_blocking;
 
 use crate::{
     components::{input::SearchInput, pet::ZeroEmpty},
-    utils::{Icon, to_clipboard},
+    utils::to_clipboard,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
@@ -300,9 +298,9 @@ fn RuleTableRow(item: Rule, on_change: EventHandler<()>) -> Element {
                     },
 
                     if is_copied() {
-                        Icon { icon: MdCheck, size: 13, color: "green" }
+                        Check { size: "13px", class: "text-green-500" }
                     } else {
-                        Icon { icon: MdContentCopy, size: 13 }
+                        Copy { size: "13px" }
                     }
                 }
                 div { class: "flex flex-col",

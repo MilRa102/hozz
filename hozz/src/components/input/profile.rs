@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::md_content_icons::{MdAdd, MdContentPaste};
+use dioxus_icons::lucide::{Clipboard, Plus};
 use shared::apps::{LoggingLayer, Orchestrator, ProfileManager};
-
-use crate::utils::Icon;
 
 #[component]
 pub fn AddProfile() -> Element {
@@ -55,14 +53,14 @@ pub fn AddProfile() -> Element {
                     class: "px-3 py-2 border border-transparent rounded-md text-zinc-400 hover:bg-white/5 hover:text-zinc-200 transition-colors cursor-copy",
                     onclick: paste_from_clipboard,
                     title: "Вставить из буфера",
-                    Icon { icon: MdContentPaste, size: 18 }
+                    Clipboard { size: "18px" }
                 }
 
                 button {
                     class: "px-3 py-2 bg-zinc-100 hover:bg-white text-black rounded-md text-sm font-semibold transition-colors focus:outline-none active:scale-95 cursor-pointer",
                     title: "Добавить",
                     onclick: on_apply,
-                    Icon { icon: MdAdd, size: 18, color: "black" }
+                    Plus { size: "18px" }
                 }
             }
         }

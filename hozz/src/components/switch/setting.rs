@@ -1,14 +1,8 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::{
-    ld_icons::LdRecycle,
-    md_action_icons::{MdAdminPanelSettings, MdAutorenew, MdHelpOutline},
-};
+use dioxus_icons::lucide::{CircleQuestionMark, Recycle, RefreshCw, Settings};
 use prefs::{Requirement, SettingMeta};
 
-use crate::{
-    components::{modal::ModalDetails, switch::control::SettingControl},
-    utils::Icon,
-};
+use crate::components::{modal::ModalDetails, switch::control::SettingControl};
 
 #[component]
 pub(crate) fn SettingRow(
@@ -34,7 +28,7 @@ pub(crate) fn SettingRow(
                         button {
                             class: "flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-help",
                             onclick: move |_| show_modal.set(true),
-                            Icon { icon: MdHelpOutline, size: 16 }
+                            CircleQuestionMark { size: "16px" }
                         }
                     }
                     "{title}"
@@ -66,19 +60,19 @@ pub(crate) fn SettingRow(
                         match req {
                             Requirement::Admin => rsx! {
                                 div { class: "flex items-center gap-2",
-                                    Icon { icon: MdAdminPanelSettings, size: 16, color: "green" }
+                                    Settings { size: "16px", class: "text-green-500" }
                                     span { "Необходимо обладать правами администратора приложения для применения настройки" }
                                 }
                             },
                             Requirement::CoreReload => rsx! {
                                 div { class: "flex items-center gap-2",
-                                    Icon { icon: MdAutorenew, size: 16, color: "orange" }
+                                    RefreshCw { size: "16px", class: "text-orange-500" }
                                     span { "Для применения настройки, ядро приложения будет перезапущено." }
                                 }
                             },
                             Requirement::Restart => rsx! {
                                 div { class: "flex items-center gap-2",
-                                    Icon { icon: LdRecycle, size: 16, color: "white" }
+                                    Recycle { size: "16px", class: "text-white" }
                                     span { "Чтобы изменения вступили в силу, закройте приложение и откройте его снова." }
                                 }
                             },

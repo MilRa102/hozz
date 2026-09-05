@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dioxus::{logger::tracing, prelude::*};
-use dioxus_free_icons::icons::ld_icons::{LdLockKeyholeOpen, LdShare2};
+use dioxus_icons::lucide::{LockKeyholeOpen, Share2};
 use serde_json::{Map, Value as Json};
 use shared::apps::{
     LoggingLayer, Orchestrator,
@@ -16,7 +16,7 @@ use crate::{
     components::{
         card::PanelCard, input::SearchInput, item::SecretEntry, modal::ModalOverlay,
     },
-    utils::{Icon, to_clipboard},
+    utils::to_clipboard,
 };
 
 /// Renders the Vault explorer panel with browsing, search, sharing, and recent access views.
@@ -204,7 +204,7 @@ pub fn VaultExplorer(
                             class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors cursor-copy",
                             onclick: move |_| secret_unshare(),
                             title: "Получить секрет",
-                            Icon { icon: LdLockKeyholeOpen, size: 14 }
+                            LockKeyholeOpen { size: "14px" }
                         }
 
                         SearchInput {
@@ -273,7 +273,7 @@ pub fn VaultExplorer(
                         class: "p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors cursor-copy",
                         onclick: move |_| secret_share(selected_secret_path()),
                         title: "Поделиться секретом",
-                        Icon { icon: LdShare2, size: 14 }
+                        Share2 { size: "14px" }
                     }
                 },
 

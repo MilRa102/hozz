@@ -3,14 +3,11 @@ use std::sync::Arc;
 use ai::{AiPrefsReader, ProviderKind, list_ollama_models};
 use config::CONF;
 use dioxus::{logger::tracing, prelude::*};
-use dioxus_free_icons::icons::md_action_icons::MdAutorenew;
+use dioxus_icons::lucide::RefreshCw;
 use prefs::{SettingMeta, SettingType};
 use shared::{ai::AiRegistry, apps::{LoggingLayer, Orchestrator}};
 
-use crate::{
-    components::input::{SettingSelect, SettingSelectVertical, SettingSwitch},
-    utils::Icon,
-};
+use crate::components::input::{SettingSelect, SettingSelectVertical, SettingSwitch};
 
 #[component]
 pub(crate) fn SettingControl(
@@ -104,7 +101,7 @@ fn TavilyApiKeyControl(
                         refreshing.set(false);
                     }
                 },
-                Icon { icon: MdAutorenew, size: 17 }
+                RefreshCw { size: "17px" }
             }
         }
     }
@@ -170,7 +167,7 @@ fn ModelPicker(
                             class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white",
                             title: "Обновить список моделей Ollama",
                             onclick: move |_| refresh_tick += 1,
-                            Icon { icon: MdAutorenew, size: 17 }
+                            RefreshCw { size: "17px" }
                         }
                     }
                 }
@@ -186,7 +183,7 @@ fn ModelPicker(
                             class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white",
                             title: "Обновить список моделей Ollama",
                             onclick: move |_| refresh_tick += 1,
-                            Icon { icon: MdAutorenew, size: 17 }
+                            RefreshCw { size: "17px" }
                         }
                     }
                 }
