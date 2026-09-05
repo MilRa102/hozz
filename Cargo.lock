@@ -9936,6 +9936,7 @@ dependencies = [
  "machine",
  "prefs",
  "reqwest 0.13.4",
+ "rest",
  "rig",
  "rkyv",
  "secrecy",

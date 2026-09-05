@@ -7,7 +7,7 @@ mod vault;
 
 pub use ai::{
     AiCopilotKeySetting, AiGeminiKeySetting, AiModelSetting, AiOllamaUrlSetting,
-    AiProviderSetting, ChatCapability,
+    AiProviderSetting, AiTavilyKeySetting, ChatCapability,
 };
 pub use containers::ContainerCapability;
 pub use gateway::GatewayCapability;

@@ -26,8 +26,8 @@ pub fn normalize_title(raw: &str) -> String {
         .trim();
 
     let mut cleaned = sanitized.to_string();
-    if cleaned.len() > 48 {
-        cleaned.truncate(48);
+    if cleaned.chars().count() > 48 {
+        cleaned = cleaned.chars().take(48).collect();
         while !cleaned.is_empty()
             && cleaned
                 .chars()

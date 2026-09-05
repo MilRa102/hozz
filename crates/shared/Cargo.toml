@@ -11,6 +11,7 @@ config = { path = "../config" }
 db = { path = "../db" }
 machine = { path = "../machine" }
 prefs = { path = "../prefs" }
+rest = { path = "../rest" }
 
 async-trait = { workspace = true }
 anyhow = { workspace = true }

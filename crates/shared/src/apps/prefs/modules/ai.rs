@@ -176,6 +176,35 @@ impl PreferenceHook<Arc<Orchestrator>> for AiCopilotKeySetting {
     }
 }
 
+pub struct AiTavilyKeySetting;
+
+impl PreferenceKey for AiTavilyKeySetting {
+    const ID: &'static str = "ai.api_key.tavily";
+}
+
+#[async_trait]
+impl PreferenceHook<Arc<Orchestrator>> for AiTavilyKeySetting {
+    fn meta(&self) -> SettingMeta {
+        SettingMeta {
+            id: Self::ID,
+            title: "Tavily API Key",
+            description: "API-ключ Tavily для веб-поиска",
+            tags: &["ai", "tavily", "api", "key", "search"],
+            category: Category::Advanced,
+            setting_type: SettingType::TextInput,
+            requirements: &[Requirement::Restart],
+            default_value: "",
+        }
+    }
+
+    async fn actual_state(
+        &self,
+        orch: Arc<Orchestrator>,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+}
+
 pub struct AiOllamaUrlSetting;
 
 impl PreferenceKey for AiOllamaUrlSetting {

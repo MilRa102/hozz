@@ -20,6 +20,7 @@ impl AiPrefsReader {
     pub const KEY_MODEL: &'static str = "ai.model";
     pub const KEY_GEMINI_API_KEY: &'static str = "ai.api_key.gemini";
     pub const KEY_COPILOT_API_KEY: &'static str = "ai.api_key.copilot";
+    pub const KEY_TAVILY_API_KEY: &'static str = "ai.api_key.tavily";
     pub const KEY_OLLAMA_BASE_URL: &'static str = "ai.ollama.base_url";
 
     fn value(&self, key: &str) -> Option<String> {
@@ -72,6 +73,11 @@ impl AiPrefsReader {
         self.value(Self::KEY_COPILOT_API_KEY)
     }
 
+    pub fn tavily_api_key(&self) -> Option<String> {
+        self.value(Self::KEY_TAVILY_API_KEY)
+            .filter(|value| !value.trim().is_empty())
+    }
+
     pub fn ollama_base_url(&self) -> String {
         self.value(Self::KEY_OLLAMA_BASE_URL)
             .unwrap_or_else(|| "http://localhost:11434".to_string())
@@ -80,8 +86,12 @@ impl AiPrefsReader {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
     use crate::test_support::init_db;
+
+    static PREF_LOCK: Mutex<()> = Mutex::new(());
 
     #[allow(clippy::unwrap_used)]
     fn set_pref(key: &str, value: &str) {
@@ -89,7 +99,9 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn reads_provider_and_model_from_shared_app_prefs_tree() {
+        let _guard = PREF_LOCK.lock().unwrap();
         init_db();
         set_pref(AiPrefsReader::KEY_PROVIDER, "ollama");
         set_pref(AiPrefsReader::KEY_MODEL, "llama3");
@@ -100,14 +112,18 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn is_enabled_reflects_stored_bool() {
+        let _guard = PREF_LOCK.lock().unwrap();
         init_db();
         set_pref(AiPrefsReader::KEY_ENABLED, "true");
         assert!(AiPrefsReader.is_enabled());
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn ollama_base_url_falls_back_to_default_when_unset() {
+        let _guard = PREF_LOCK.lock().unwrap();
         init_db();
         assert_eq!(
             AiPrefsReader.ollama_base_url(),
@@ -116,7 +132,9 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn effective_model_prefers_saved_setting_over_fallback() {
+        let _guard = PREF_LOCK.lock().unwrap();
         init_db();
         set_pref(AiPrefsReader::KEY_MODEL, "custom-model");
 
@@ -128,7 +146,9 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn effective_model_falls_back_to_provider_default_when_unset() {
+        let _guard = PREF_LOCK.lock().unwrap();
         init_db();
 
         let reader = AiPrefsReader;
@@ -139,7 +159,30 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
+    fn tavily_api_key_roundtrips_when_present() {
+        let _guard = PREF_LOCK.lock().unwrap();
+        init_db();
+        set_pref(AiPrefsReader::KEY_TAVILY_API_KEY, "tvly-test-key");
+
+        let reader = AiPrefsReader;
+        assert_eq!(reader.tavily_api_key().as_deref(), Some("tvly-test-key"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn tavily_api_key_is_none_when_blank() {
+        let _guard = PREF_LOCK.lock().unwrap();
+        init_db();
+        set_pref(AiPrefsReader::KEY_TAVILY_API_KEY, "   ");
+
+        assert_eq!(AiPrefsReader.tavily_api_key(), None);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
     fn provider_is_none_when_key_missing() {
+        let _guard = PREF_LOCK.lock().unwrap();
         init_db();
         assert_eq!(
             AiPrefsReader.value("ai.unset.provider.test"),

@@ -14,9 +14,10 @@ use crate::{
         app_store::AppStore,
         prefs::{
             AiCopilotKeySetting, AiGeminiKeySetting, AiModelSetting, AiOllamaUrlSetting,
-            AiProviderSetting, AllowLanCapability, AutostartCapability, ChatCapability,
-            ContainerCapability, FakeIpCapability, FindProcessCapability,
-            GatewayCapability, PolicyCapability, PrefsStore, ResourceCapability,
+            AiProviderSetting, AiTavilyKeySetting, AllowLanCapability,
+            AutostartCapability, ChatCapability, ContainerCapability,
+            FakeIpCapability, FindProcessCapability, GatewayCapability,
+            PolicyCapability, PrefsStore, ResourceCapability,
             SplitRouteCapability, SystemProxyCapability, VaultCapability,
         },
         proxy::{ProfileStore, RuleStore},
@@ -87,7 +88,7 @@ pub struct Orchestrator {
     pub registry: SettingsRegistry<Arc<Orchestrator>>,
 
     /// Shared Rig tool registry used by AI integrations.
-    pub(crate) ai_tool_server: std::sync::OnceLock<ToolServerHandle>,
+    pub(crate) ai_tool_server: std::sync::RwLock<Option<ToolServerHandle>>,
 }
 
 impl Orchestrator {
@@ -164,6 +165,7 @@ impl Orchestrator {
         registry.register(AiModelSetting);
         registry.register(AiGeminiKeySetting);
         registry.register(AiCopilotKeySetting);
+        registry.register(AiTavilyKeySetting);
         registry.register(AiOllamaUrlSetting);
 
         // Create the orchestrator instance with all initialized components.
@@ -178,7 +180,7 @@ impl Orchestrator {
             prefs: PrefsStore,
             state,
             registry,
-            ai_tool_server: std::sync::OnceLock::new(),
+            ai_tool_server: std::sync::RwLock::new(None),
         });
 
         // Set the singleton instance in the static ORCH variable.
