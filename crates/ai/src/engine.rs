@@ -14,14 +14,36 @@ use crate::{
 
 /// Live snapshot of an in-flight generation, published on every text delta so
 /// UI code can subscribe (see [`GenerationManager::subscribe`]) without polling.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GenerationSnapshot {
     pub text: String,
-    pub thinking: String,
-    pub finished: bool,
+    pub status: GenerationStatus,
     /// Tool calls issued so far this turn, in call order; updated in place as
     /// results arrive so the UI can flip a loader to a status icon live.
     pub tool_calls: Vec<ToolCallView>,
+}
+
+impl Default for GenerationSnapshot {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            status: GenerationStatus::Initializing,
+            tool_calls: Vec::new(),
+        }
+    }
+}
+
+/// The mutually exclusive lifecycle states of an in-flight generation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum GenerationStatus {
+    #[default]
+    Initializing,
+    LoadingModel,
+    Thinking,
+    Responding,
+    Finished,
+    Cancelled,
+    Error(String),
 }
 
 /// Lifecycle state of a single tool call within a [`GenerationSnapshot`].
@@ -122,10 +144,7 @@ impl GenerationManager {
         _conversation_store: Arc<ConversationStore>,
         request: GenerationRequest,
     ) -> Result<(), String> {
-        let (snapshot_tx, _) = watch::channel(GenerationSnapshot {
-            thinking: "Инициализация...".to_string(),
-            ..Default::default()
-        });
+        let (snapshot_tx, _) = watch::channel(GenerationSnapshot::default());
         let (event_tx, _) = broadcast::channel(64);
         let (cancel_tx, mut cancel_rx) = watch::channel(false);
         let control_slot: Arc<Mutex<Option<Arc<dyn StreamControl>>>> =
@@ -151,10 +170,8 @@ impl GenerationManager {
         // 2. Запускаем фоновый таск обработки генерации
         tokio::spawn(async move {
             let mut snapshot = GenerationSnapshot {
-                thinking: "Загрузка модели...".to_string(),
-                text: String::new(),
-                finished: false,
-                tool_calls: Vec::new(),
+                status: GenerationStatus::LoadingModel,
+                ..Default::default()
             };
             let _ = snapshot_tx.send(snapshot.clone());
 
@@ -174,8 +191,7 @@ impl GenerationManager {
             let (mut events, control) = match stream_result {
                 Ok(res) => res,
                 Err(err) => {
-                    snapshot.thinking.clear();
-                    snapshot.finished = true;
+                    snapshot.status = GenerationStatus::Error(err.to_string());
                     let _ = snapshot_tx.send(snapshot.clone());
                     let _ =
                         event_tx_for_task.send(GenerationEvent::Error(err.to_string()));
@@ -184,12 +200,6 @@ impl GenerationManager {
                         status: MessageStatus::Error(err.to_string()),
                     });
 
-                    let msg = Message::new(
-                        Role::Assistant,
-                        format!("Ошибка генерации: {err}"),
-                        "{}",
-                    );
-                    let _ = history_store.append(&conv_id, &msg);
                     active_map.lock().await.remove(&conv_id);
                     return;
                 },
@@ -201,7 +211,7 @@ impl GenerationManager {
                 *ctl_guard = Some(control);
             }
 
-            snapshot.thinking = "Размышляет...".to_string();
+            snapshot.status = GenerationStatus::Thinking;
             let _ = snapshot_tx.send(snapshot.clone());
             let _ = event_tx_for_task.send(GenerationEvent::Thinking(
                 "Размышляет...".to_string(),
@@ -228,15 +238,13 @@ impl GenerationManager {
                     maybe_event = events.next() => {
                         match maybe_event {
                             Some(ChatEvent::Delta(delta)) => {
-                                if !snapshot.thinking.is_empty() {
-                                    snapshot.thinking.clear();
-                                }
+                                snapshot.status = GenerationStatus::Responding;
                                 snapshot.text.push_str(&delta);
                                 let _ = snapshot_tx.send(snapshot.clone());
                                 let _ = event_tx_for_task.send(GenerationEvent::Delta(delta));
                             }
                             Some(ChatEvent::Reasoning(reasoning)) => {
-                                snapshot.thinking.push_str(&reasoning);
+                                snapshot.status = GenerationStatus::Thinking;
                                 let _ = snapshot_tx.send(snapshot.clone());
                                 let _ = event_tx_for_task.send(GenerationEvent::Thinking(reasoning));
                             }
@@ -297,6 +305,8 @@ impl GenerationManager {
                             }
                             Some(ChatEvent::Error(err)) => {
                                 last_error = Some(err.clone());
+                                snapshot.status = GenerationStatus::Error(err.clone());
+                                let _ = snapshot_tx.send(snapshot.clone());
                                 let _ = event_tx_for_task.send(GenerationEvent::Error(err));
                                 break;
                             }
@@ -306,8 +316,13 @@ impl GenerationManager {
                 }
             }
 
-            snapshot.thinking.clear();
-            snapshot.finished = true;
+            snapshot.status = if was_cancelled {
+                GenerationStatus::Cancelled
+            } else if let Some(error) = last_error.clone() {
+                GenerationStatus::Error(error)
+            } else {
+                GenerationStatus::Finished
+            };
             let _ = snapshot_tx.send(snapshot.clone());
 
             let status = if was_cancelled {
@@ -422,5 +437,18 @@ mod tests {
         });
         let raw = serde_json::to_string(&event).unwrap_or_default();
         assert!(raw.contains("proxy_status"));
+    }
+
+    #[test]
+    fn generation_snapshot_tracks_terminal_error() {
+        let snapshot = GenerationSnapshot {
+            status: GenerationStatus::Error("provider unavailable".to_string()),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            snapshot.status,
+            GenerationStatus::Error(ref error) if error == "provider unavailable"
+        ));
     }
 }

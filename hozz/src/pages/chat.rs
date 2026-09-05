@@ -15,7 +15,8 @@ use ai::{
 use dioxus::{document::eval, logger::tracing, prelude::*};
 use dioxus_free_icons::icons::{md_action_icons::MdDone, md_alert_icons::MdError};
 use dioxus_icons::lucide::{
-    CircleStop, Loader, MessageCircle, PenTool, Send, Sparkles, Trash2,
+    CircleStop, Loader, MessageCircle, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen,
+    PenTool, Send, Sparkles, Trash2,
 };
 use shared::{
     ai::AiRegistry,
@@ -319,29 +320,38 @@ mod sidebar {
     pub(super) fn ChatSidebar(
         conversations: Vec<Conversation>,
         selected_conversation_id: Option<String>,
+        is_expanded: bool,
         on_select_conversation: Callback<String>,
         on_create_conversation: Callback<()>,
         on_delete_conversation: Callback<String>,
     ) -> Element {
-        rsx! {
-            div { class: "flex w-72 flex-col border-r border-zinc-800/80 bg-zinc-900/40 backdrop-blur-xl",
-                div { class: "flex items-center justify-between border-b border-zinc-800/80 p-4",
-                    h2 { class: "font-semibold text-sm tracking-wide text-zinc-200", "Диалоги" }
-                    button {
-                        class: "rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors",
-                        onclick: move |_| on_create_conversation.call(()),
-                            title: "Новый чат",
-                            MessageCircle { size: "18px"}
-                    }
-                }
+        let sidebar_class = if is_expanded {
+            "w-[288px] border-r border-zinc-800/80"
+        } else {
+            "w-0 border-r-0"
+        };
 
-                div { class: "flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar",
-                    for conversation in conversations.iter() {
-                        ChatConversationItem {
-                            conversation: conversation.clone(),
-                            is_selected: selected_conversation_id.as_ref() == Some(&conversation.id),
-                            on_select_conversation,
-                            on_delete_conversation,
+        rsx! {
+            div { class: "flex {sidebar_class} shrink-0 overflow-hidden flex-col bg-zinc-900/40 backdrop-blur-xl transition-all duration-300 ease-in-out",
+                if is_expanded {
+                    div { class: "flex items-center justify-between border-b border-zinc-800/80 p-4",
+                        h2 { class: "font-semibold text-sm tracking-wide text-zinc-200", "Диалоги" }
+                        button {
+                            class: "rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors",
+                            onclick: move |_| on_create_conversation.call(()),
+                            title: "Новый чат",
+                            MessageCircle { size: "18px" }
+                        }
+                    }
+
+                    div { class: "flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar",
+                        for conversation in conversations.iter() {
+                            ChatConversationItem {
+                                conversation: conversation.clone(),
+                                is_selected: selected_conversation_id.as_ref() == Some(&conversation.id),
+                                on_select_conversation,
+                                on_delete_conversation,
+                            }
                         }
                     }
                 }
@@ -405,21 +415,40 @@ mod chat_area {
     #[component]
     pub(super) fn ChatHeader(
         conversation: Conversation,
-        is_thinking: bool,
-        generation_active: bool,
+        generation_status: Option<ai::GenerationStatus>,
+        is_sidebar_expanded: bool,
+        on_toggle_sidebar: Callback<()>,
+        on_create_conversation: Callback<()>,
     ) -> Element {
         rsx! {
             div { class: "flex items-center justify-between px-6 py-4 pb-2 bg-zinc-900/20 backdrop-blur-md",
                 div { class: "flex items-center gap-3",
+                    button {
+                        class: "rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors",
+                        onclick: move |_| on_toggle_sidebar.call(()),
+                        title: if is_sidebar_expanded { "Свернуть диалоги" } else { "Развернуть диалоги" },
+                        if is_sidebar_expanded {
+                            PanelLeftClose { size: "18px" }
+                        } else {
+                            PanelLeftOpen { size: "18px" }
+                        }
+                    }
+                    if !is_sidebar_expanded {
+                        button {
+                            class: "rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors",
+                            onclick: move |_| on_create_conversation.call(()),
+                            title: "Новый чат",
+                            MessageCircle { size: "18px" }
+                        }
+                    }
                     h3 { class: "font-medium text-sm text-zinc-100", "{conversation.title}" }
                     span {
                         class: "px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border bg-white/5 shadow-sm text-zinc-400 border-white/10 cursor-help",
                         "{conversation.provider} • {conversation.model}"
                     }
                 }
-                BadgeThinking {
-                    is_thinking,
-                    generation_active,
+                if let Some(status) = generation_status {
+                    GenerationStatusBadge { status }
                 }
             }
         }
@@ -437,7 +466,7 @@ mod chat_area {
         rsx! {
             div {
                 id: "chat-scroll-container",
-                class: "flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar",
+                class: "flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar",
                 for (idx , item) in timeline.iter().enumerate() {
                     div {
                         key: "{idx}",
@@ -485,15 +514,28 @@ mod chat_area {
     pub(super) fn ChatComposer(
         input_text: String,
         generation_active: bool,
+        is_expanded: bool,
         on_input: Callback<String>,
         on_submit: Callback<()>,
         on_stop: Callback<()>,
+        on_toggle_expand: Callback<()>,
     ) -> Element {
+        let composer_class = if is_expanded {
+            "flex h-4/5 min-h-[220px] shrink-0 flex-col"
+        } else {
+            "flex shrink-0 flex-col"
+        };
+        let textarea_class = if is_expanded {
+            "w-full min-h-0 flex-1 resize-none bg-transparent p-4 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none custom-scrollbar"
+        } else {
+            "w-full resize-none bg-transparent p-4 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none custom-scrollbar min-h-[56px] max-h-[200px]"
+        };
+
         rsx! {
-            div { class: "px-4 py-3 bg-transparent",
-                div { class: "relative flex flex-col rounded-2xl border border-white/10 bg-zinc-900/50 shadow-sm focus-within:border-violet-500/50 transition-all",
+            div { class: "{composer_class} px-4 py-3 bg-transparent transition-all duration-300 ease-in-out",
+                div { class: "relative flex min-h-0 flex-1 flex-col rounded-2xl border border-white/10 bg-zinc-900/50 shadow-sm focus-within:border-violet-500/50 transition-all",
                     textarea {
-                        class: "w-full resize-none bg-transparent p-4 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none custom-scrollbar min-h-[56px] max-h-[200px]",
+                        class: "{textarea_class}",
                         placeholder: "Напишите сообщение...",
                         value: "{input_text}",
                         oninput: move |evt| on_input.call(evt.value()),
@@ -512,6 +554,12 @@ mod chat_area {
                     div { class: "flex items-center justify-between px-4 py-2.5 bg-transparent rounded-b-2xl",
                         div { class: "text-xs font-mono text-zinc-500", "Enter для отправки • Shift+Enter для переноса • Esc для остановки" }
                         div { class: "flex items-center gap-2",
+                            button {
+                                class: "flex items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900/70 p-2 text-zinc-300 transition-all hover:bg-zinc-800 hover:text-zinc-100",
+                                onclick: move |_| on_toggle_expand.call(()),
+                                title: if is_expanded { "Вернуть обычный размер" } else { "Развернуть на 80%" },
+                                if is_expanded { Minimize2 { size: "18px" } } else { Maximize2 { size: "18px" } }
+                            }
                             if generation_active {
                                 button {
                                     class: "flex items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 p-2 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer shadow-lg shadow-red-500/20",
@@ -546,96 +594,37 @@ mod chat_area {
         }
     }
 
-    fn status_badge(is_thinking: bool, animation_class: &str) -> Element {
-        let classes = if is_thinking {
-            "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#47568f]/20 text-[#a8bcf8] border-[#47568f]/30 chat-status-thinking"
-        } else {
-            "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#5c3d76]/20 text-[#d5b8f7] border-[#5c3d76]/30 chat-status-answering"
+    #[component]
+    pub(super) fn GenerationStatusBadge(status: ai::GenerationStatus) -> Element {
+        let (classes, label, icon) = match status {
+            ai::GenerationStatus::Initializing | ai::GenerationStatus::LoadingModel => (
+                "bg-[#47568f]/20 text-[#a8bcf8] border-[#47568f]/30 chat-status-thinking",
+                "Подключается",
+                rsx!(span { class: "chat-status-sparkles", Sparkles { size: "13px" } }),
+            ),
+            ai::GenerationStatus::Thinking => (
+                "bg-[#47568f]/20 text-[#a8bcf8] border-[#47568f]/30 chat-status-thinking",
+                "Размышляет",
+                rsx!(span { class: "chat-status-sparkles", Sparkles { size: "13px" } }),
+            ),
+            ai::GenerationStatus::Responding => (
+                "bg-[#5c3d76]/20 text-[#d5b8f7] border-[#5c3d76]/30 chat-status-answering",
+                "Отвечает",
+                rsx!(span { class: "chat-status-pen", PenTool { size: "13px" } }),
+            ),
+            ai::GenerationStatus::Finished
+            | ai::GenerationStatus::Cancelled
+            | ai::GenerationStatus::Error(_) => return rsx! {},
         };
 
         rsx! {
-            span {
-                class: "{classes} {animation_class}",
-                if is_thinking {
-                    span { class: "chat-status-sparkles", Sparkles { size: "13px" } }
-                    "Размышляет"
-                } else {
-                    span { class: "chat-status-pen", PenTool { size: "13px" } }
-                    span { class: "relative",
-                        "Отвечает"
+            span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm {classes}",
+                {icon}
+                span { class: "relative",
+                    "{label}"
+                    if matches!(status, ai::GenerationStatus::Responding) {
                         span { class: "chat-status-ink", aria_hidden: "true" }
                     }
-                }
-            }
-        }
-    }
-
-    #[component]
-    pub(super) fn BadgeThinking(is_thinking: bool, generation_active: bool) -> Element {
-        let mut current_status = use_signal(|| is_thinking);
-        let mut leaving_status = use_signal(|| Option::<bool>::None);
-        let mut transition_id = use_signal(|| 0_u64);
-
-        use_effect(move || {
-            if !generation_active {
-                leaving_status.set(None);
-                current_status.set(is_thinking);
-                return;
-            }
-
-            let previous_status = current_status();
-            if previous_status == is_thinking {
-                return;
-            }
-
-            let next_transition_id = transition_id().wrapping_add(1);
-            transition_id.set(next_transition_id);
-            leaving_status.set(Some(previous_status));
-            current_status.set(is_thinking);
-
-            spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(260)).await;
-                if transition_id() == next_transition_id {
-                    leaving_status.set(None);
-                }
-            });
-        });
-
-        if !generation_active {
-            return rsx! {};
-        }
-
-        let current = current_status();
-        let leaving = leaving_status();
-        let entering_class = if leaving.is_some() {
-            if current {
-                "chat-status-enter-from-left"
-            } else {
-                "chat-status-enter-from-right"
-            }
-        } else {
-            ""
-        };
-
-        rsx! {
-            span { class: "relative inline-flex items-center chat-status-container",
-                if let Some(previous) = leaving {
-                    span {
-                        key: "leaving-{transition_id()}-{previous}",
-                        class: "absolute inset-0 inline-flex items-center",
-                        {status_badge(
-                            previous,
-                            if previous {
-                                "chat-status-exit-to-left"
-                            } else {
-                                "chat-status-exit-to-right"
-                            },
-                        )}
-                    }
-                }
-                span {
-                    key: "current-{transition_id()}-{current}",
-                    {status_badge(current, entering_class)}
                 }
             }
         }
@@ -774,8 +763,10 @@ pub fn ChatPage() -> Element {
     let mut selected_conversation_id = use_signal(|| Option::<String>::None);
     let mut input_text = use_signal(String::new);
     let mut stream_text = use_signal(String::new);
-    let mut is_thinking = use_signal(|| false);
+    let mut generation_status = use_signal(|| Option::<ai::GenerationStatus>::None);
     let mut generation_active = use_signal(|| false);
+    let mut is_sidebar_expanded = use_signal(|| true);
+    let mut is_composer_expanded = use_signal(|| false);
 
     let mut reload_tick = use_signal(|| 0);
     let mounted = use_hook(|| Arc::new(AtomicBool::new(true)));
@@ -845,7 +836,7 @@ pub fn ChatPage() -> Element {
     let mut handle_select_conversation = move |conversation_id: String| {
         selected_conversation_id.set(Some(conversation_id));
         generation_active.set(false);
-        is_thinking.set(false);
+        generation_status.set(None);
         stream_text.set(String::new());
     };
 
@@ -857,7 +848,7 @@ pub fn ChatPage() -> Element {
         if ConversationStore.upsert(&new_conv).is_ok() {
             selected_conversation_id.set(Some(new_conv.id));
             generation_active.set(false);
-            is_thinking.set(false);
+            generation_status.set(None);
             stream_text.set(String::new());
             reload_tick.write();
         }
@@ -871,7 +862,7 @@ pub fn ChatPage() -> Element {
             if selected_conversation_id().as_deref() == Some(conversation_id.as_str()) {
                 selected_conversation_id.set(None);
                 generation_active.set(false);
-                is_thinking.set(false);
+                generation_status.set(None);
                 stream_text.set(String::new());
             }
             reload_tick.write();
@@ -907,7 +898,7 @@ pub fn ChatPage() -> Element {
         // 1. Мгновенно очищаем инпут и включаем статусы ожидания
         input_text.set(String::new());
         generation_active.set(true);
-        is_thinking.set(true);
+        generation_status.set(Some(ai::GenerationStatus::Initializing));
         stream_text.set(String::new());
 
         // 2. Мгновенно сохраняем сообщение пользователя локально
@@ -976,6 +967,7 @@ pub fn ChatPage() -> Element {
             tools: Some(orch_for_request.tool_server()),
             max_tool_turns: 4,
         };
+        let orch_for_generation = orch_for_request.clone();
         let mounted_for_spawn = mounted_for_send.clone();
         spawn(async move {
             let manager_cl = consume_context::<Arc<GenerationManager>>();
@@ -995,8 +987,9 @@ pub fn ChatPage() -> Element {
                 tracing::error!("Ошибка запуска генерации: {err}");
                 if mounted_for_spawn.load(Ordering::SeqCst) {
                     generation_active.set(false);
-                    is_thinking.set(false);
+                    generation_status.set(None);
                     stream_text.set(String::new());
+                    orch_for_generation.error(format!("Не удалось запустить генерацию: {err}"));
                 }
                 return;
             }
@@ -1006,16 +999,24 @@ pub fn ChatPage() -> Element {
                 let mut last_tool_signature =
                     tool_calls_signature(&initial_snapshot.tool_calls);
                 if mounted_for_spawn.load(Ordering::SeqCst) {
+                    let status = initial_snapshot.status.clone();
+                    generation_status.set(Some(status.clone()));
                     if !initial_snapshot.text.is_empty() {
-                        is_thinking.set(false);
                         stream_text.set(initial_snapshot.text.clone());
-                    } else if !initial_snapshot.thinking.is_empty() {
-                        is_thinking.set(true);
                     }
 
-                    if initial_snapshot.finished {
+                    if let ai::GenerationStatus::Error(error) = &status {
+                        orch_for_generation.error(format!("Ошибка ответа модели: {error}"));
+                    }
+
+                    if matches!(
+                        status,
+                        ai::GenerationStatus::Finished
+                            | ai::GenerationStatus::Cancelled
+                            | ai::GenerationStatus::Error(_)
+                    ) {
                         generation_active.set(false);
-                        is_thinking.set(false);
+                        generation_status.set(None);
                         stream_text.set(String::new());
                         reload_tick.write();
                         return;
@@ -1035,11 +1036,10 @@ pub fn ChatPage() -> Element {
 
                     let snapshot = rx.borrow().clone();
                     if mounted_for_spawn.load(Ordering::SeqCst) {
+                        let status = snapshot.status.clone();
+                        generation_status.set(Some(status.clone()));
                         if !snapshot.text.is_empty() {
-                            is_thinking.set(false);
                             stream_text.set(snapshot.text);
-                        } else if !snapshot.thinking.is_empty() {
-                            is_thinking.set(true);
                         }
 
                         // Обновляем список сообщений сразу, как только меняется статус
@@ -1050,9 +1050,18 @@ pub fn ChatPage() -> Element {
                             reload_tick.write();
                         }
 
-                        if snapshot.finished {
+                        if let ai::GenerationStatus::Error(error) = &status {
+                            orch_for_generation.error(format!("Ошибка ответа модели: {error}"));
+                        }
+
+                        if matches!(
+                            status,
+                            ai::GenerationStatus::Finished
+                                | ai::GenerationStatus::Cancelled
+                                | ai::GenerationStatus::Error(_)
+                        ) {
                             generation_active.set(false);
-                            is_thinking.set(false);
+                            generation_status.set(None);
                             stream_text.set(String::new());
                             reload_tick.write();
                             break;
@@ -1079,10 +1088,10 @@ pub fn ChatPage() -> Element {
 
     rsx! {
         div { class: "flex h-full w-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden",
-            // Боковая панель теперь вынесена в отдельный компонент для лучшей читаемости.
             sidebar::ChatSidebar {
                 conversations: conversations(),
                 selected_conversation_id: selected_conversation_id(),
+                is_expanded: is_sidebar_expanded(),
                 on_select_conversation: move |conversation_id| {
                     handle_select_conversation(conversation_id);
                 },
@@ -1094,30 +1103,41 @@ pub fn ChatPage() -> Element {
                 },
             }
 
-            // Основная область чата теперь тоже разбита на небольшие смысловые блоки.
-            div { class: "flex flex-1 flex-col h-full bg-zinc-950 relative",
+            div { class: "flex min-h-0 flex-1 flex-col bg-zinc-950 relative",
                 if let Some(conv) = selected_conversation() {
                     chat_area::ChatHeader {
                         conversation: conv.clone(),
-                        is_thinking: is_thinking(),
-                        generation_active: generation_active(),
-                    }
-
-                    chat_area::MessageList {
-                        messages: current_messages(),
-                        stream_text: stream_text(),
-                        generation_active: generation_active(),
-                    }
-
-                    chat_area::ChatComposer {
-                        input_text: input_text(),
-                        generation_active: generation_active(),
-                        on_input: move |value| input_text.set(value),
-                        on_submit: move |_| {
-                            handle_send_for_button.borrow_mut()();
+                        generation_status: generation_status(),
+                        is_sidebar_expanded: is_sidebar_expanded(),
+                        on_toggle_sidebar: move |_| {
+                            is_sidebar_expanded.set(!is_sidebar_expanded());
                         },
-                        on_stop: move |_| {
-                            handle_stop_for_button.borrow_mut()();
+                        on_create_conversation: move |_| {
+                            handle_create_conversation();
+                        },
+                    }
+
+                    div { class: "flex min-h-0 flex-1 flex-col",
+                        chat_area::MessageList {
+                            messages: current_messages(),
+                            stream_text: stream_text(),
+                            generation_active: generation_active(),
+                        }
+
+                        chat_area::ChatComposer {
+                            input_text: input_text(),
+                            generation_active: generation_active(),
+                            is_expanded: is_composer_expanded(),
+                            on_input: move |value| input_text.set(value),
+                            on_submit: move |_| {
+                                handle_send_for_button.borrow_mut()();
+                            },
+                            on_stop: move |_| {
+                                handle_stop_for_button.borrow_mut()();
+                            },
+                            on_toggle_expand: move |_| {
+                                is_composer_expanded.set(!is_composer_expanded());
+                            },
                         },
                     }
                 } else {
