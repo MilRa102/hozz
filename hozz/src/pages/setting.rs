@@ -41,17 +41,26 @@ pub fn SettingsView() -> Element {
     };
 
     let popular_tags = orch.registry.all_tags();
-    let settings_to_render: Vec<(SettingMeta, String, String)> = displayed_settings
+    let active_provider = states()
+        .get("ai.provider")
+        .cloned()
+        .or_else(|| orch.get_origin("ai.provider").map(|pref| pref.value))
+        .unwrap_or_else(|| "gemini".to_string());
+    let settings_to_render: Vec<(SettingMeta, String, String, String)> = displayed_settings
         .iter()
         .cloned()
         .map(|meta| {
-            let value = states().get(meta.id).cloned().unwrap_or_else(|| {
-                orch.get_origin(meta.id)
+            let value_key = if meta.id == "ai.model" {
+                format!("ai.model.{active_provider}")
+            } else {
+                meta.id.to_string()
+            };
+            let value = states().get(&value_key).cloned().unwrap_or_else(|| {
+                orch.get_origin(&value_key)
                     .map(|pref| pref.value)
                     .unwrap_or_else(|| meta.default_value.to_string())
             });
-            let setting_id = meta.id.to_string();
-            (meta, value, setting_id)
+            (meta.clone(), value, meta.id.to_string(), value_key)
         })
         .collect();
 
@@ -132,23 +141,25 @@ pub fn SettingsView() -> Element {
                                     }
                                 } else {
                                     div { class: "bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col shadow-sm divide-y divide-white/5",
-                                        for (meta, value, id) in settings_to_render.iter().cloned() {
+                                        for (meta, value, id, state_id) in settings_to_render.iter().cloned() {
                                             SettingRow {
                                                 key: "{meta.id}",
                                                 meta: meta.clone(),
                                                 value: value.clone(),
+                                                provider: active_provider.clone(),
                                                 onchange: {
                                                     let orch = orch.clone();
                                                     move |new_value: String| {
                                                         let orch = orch.clone();
                                                         let id = id.clone();
+                                                        let state_id = state_id.clone();
                                                         let previous_value = value.clone();
-                                                        states.write().insert(id.clone(), new_value.clone());
+                                                        states.write().insert(state_id.clone(), new_value.clone());
                                                         spawn(async move {
                                                             if let Err(e) = orch.set_preference(&id, &new_value).await {
                                                                 tracing::error!("Ошибка при переключении {}: {}", id, e);
                                                                 orch.warning(e.to_string());
-                                                                states.write().insert(id.clone(), previous_value.clone());
+                                                                states.write().insert(state_id.clone(), previous_value.clone());
                                                             }
                                                         });
                                                     }
@@ -177,23 +188,25 @@ pub fn SettingsView() -> Element {
                                     }
                                 } else {
                                     div { class: "bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col shadow-sm divide-y divide-white/5",
-                                        for (meta, value, id) in settings_to_render.iter().cloned() {
+                                        for (meta, value, id, state_id) in settings_to_render.iter().cloned() {
                                             SettingRow {
                                                 key: "{meta.id}",
                                                 meta: meta.clone(),
                                                 value: value.clone(),
+                                                provider: active_provider.clone(),
                                                 onchange: {
                                                     let orch = orch.clone();
                                                     move |new_value: String| {
                                                         let orch = orch.clone();
                                                         let id = id.clone();
+                                                        let state_id = state_id.clone();
                                                         let previous_value = value.clone();
-                                                        states.write().insert(id.clone(), new_value.clone());
+                                                        states.write().insert(state_id.clone(), new_value.clone());
                                                         spawn(async move {
                                                             if let Err(e) = orch.set_preference(&id, &new_value).await {
                                                                 tracing::error!("Ошибка при переключении {}: {}", id, e);
                                                                 orch.warning(e.to_string());
-                                                                states.write().insert(id.clone(), previous_value.clone());
+                                                                states.write().insert(state_id.clone(), previous_value.clone());
                                                             }
                                                         });
                                                     }

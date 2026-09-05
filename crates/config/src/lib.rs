@@ -1,8 +1,10 @@
+mod ai;
 mod app;
 mod conf;
 mod mihomo;
 mod workspace;
 
+pub use ai::AiConfig;
 pub use app::AppConfig;
 pub use conf::Config;
 pub use mihomo::MihomoConfig;

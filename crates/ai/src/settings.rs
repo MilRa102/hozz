@@ -18,6 +18,9 @@ impl AiPrefsReader {
     pub const KEY_ENABLED: &'static str = "module.ai";
     pub const KEY_PROVIDER: &'static str = "ai.provider";
     pub const KEY_MODEL: &'static str = "ai.model";
+    pub const KEY_MODEL_GEMINI: &'static str = "ai.model.gemini";
+    pub const KEY_MODEL_COPILOT: &'static str = "ai.model.copilot";
+    pub const KEY_MODEL_OLLAMA: &'static str = "ai.model.ollama";
     pub const KEY_GEMINI_API_KEY: &'static str = "ai.api_key.gemini";
     pub const KEY_COPILOT_API_KEY: &'static str = "ai.api_key.copilot";
     pub const KEY_TAVILY_API_KEY: &'static str = "ai.api_key.tavily";
@@ -45,6 +48,16 @@ impl AiPrefsReader {
         self.value(Self::KEY_MODEL)
     }
 
+    pub fn provider_model(&self, provider: ProviderKind) -> Option<String> {
+        let key = match provider {
+            ProviderKind::Gemini => Self::KEY_MODEL_GEMINI,
+            ProviderKind::Copilot => Self::KEY_MODEL_COPILOT,
+            ProviderKind::Ollama => Self::KEY_MODEL_OLLAMA,
+        };
+
+        self.value(key).or_else(|| self.model())
+    }
+
     pub fn effective_provider(&self, fallback: ProviderKind) -> ProviderKind {
         self.provider().unwrap_or(fallback)
     }
@@ -54,7 +67,7 @@ impl AiPrefsReader {
         provider: ProviderKind,
         fallback_model: Option<&str>,
     ) -> String {
-        self.model().unwrap_or_else(|| {
+        self.provider_model(provider).unwrap_or_else(|| {
             fallback_model
                 .map(str::to_string)
                 .unwrap_or_else(|| match provider {
@@ -133,15 +146,38 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn effective_model_prefers_saved_setting_over_fallback() {
+    fn provider_specific_model_keys_are_preferred_over_legacy_key() {
         let _guard = PREF_LOCK.lock().unwrap();
         init_db();
-        set_pref(AiPrefsReader::KEY_MODEL, "custom-model");
+        set_pref(AiPrefsReader::KEY_MODEL, "legacy-model");
+        set_pref(AiPrefsReader::KEY_MODEL_GEMINI, "gemini-2.5-pro");
 
         let reader = AiPrefsReader;
         assert_eq!(
+            reader.provider_model(ProviderKind::Gemini).as_deref(),
+            Some("gemini-2.5-pro")
+        );
+        assert_eq!(
             reader.effective_model(ProviderKind::Gemini, Some("fallback-model")),
-            "custom-model"
+            "gemini-2.5-pro"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn legacy_model_is_used_as_fallback_when_targeted_key_is_missing() {
+        let _guard = PREF_LOCK.lock().unwrap();
+        init_db();
+        set_pref(AiPrefsReader::KEY_MODEL, "legacy-model");
+
+        let reader = AiPrefsReader;
+        assert_eq!(
+            reader.provider_model(ProviderKind::Copilot).as_deref(),
+            Some("legacy-model")
+        );
+        assert_eq!(
+            reader.effective_model(ProviderKind::Copilot, Some("fallback-model")),
+            "legacy-model"
         );
     }
 

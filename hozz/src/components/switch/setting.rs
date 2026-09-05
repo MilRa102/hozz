@@ -14,6 +14,7 @@ use crate::{
 pub(crate) fn SettingRow(
     meta: SettingMeta,
     value: String,
+    provider: String,
     onchange: EventHandler<String>,
 ) -> Element {
     let SettingMeta {
@@ -45,6 +46,7 @@ pub(crate) fn SettingRow(
                 SettingControl {
                     meta: meta.clone(),
                     value: value.clone(),
+                    provider,
                     onchange,
                 }
             }

@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use ai::{AiPrefsReader, ProviderKind};
 use async_trait::async_trait;
+use db::SledManager;
 use prefs::{
     Category, PreferenceHook, PreferenceKey, Requirement, SettingMeta, SettingType,
 };
@@ -101,7 +103,7 @@ impl PreferenceHook<Arc<Orchestrator>> for AiModelSetting {
         SettingMeta {
             id: Self::ID,
             title: "AI Модель",
-            description: "Имя модели для выбранного AI-провайдера",
+            description: "Модель для выбранного AI-провайдера",
             tags: &["ai", "model", "llm"],
             category: Category::Advanced,
             setting_type: SettingType::TextInput,
@@ -115,6 +117,24 @@ impl PreferenceHook<Arc<Orchestrator>> for AiModelSetting {
         orch: Arc<Orchestrator>,
     ) -> anyhow::Result<Option<String>> {
         Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+
+    async fn execute(
+        &self,
+        orch: Arc<Orchestrator>,
+        new: &str,
+    ) -> anyhow::Result<()> {
+        let provider = orch
+            .get_origin(AiProviderSetting::ID)
+            .and_then(|pref| pref.value.parse().ok())
+            .unwrap_or(ProviderKind::Gemini);
+        let key = match provider {
+            ProviderKind::Gemini => AiPrefsReader::KEY_MODEL_GEMINI,
+            ProviderKind::Copilot => AiPrefsReader::KEY_MODEL_COPILOT,
+            ProviderKind::Ollama => AiPrefsReader::KEY_MODEL_OLLAMA,
+        };
+
+        orch.prefs.save(key, &prefs::AppPrefs::new(key, new))
     }
 }
 

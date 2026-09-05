@@ -1,6 +1,7 @@
 mod control;
 mod engine;
 mod model;
+mod ollama;
 mod provider;
 mod settings;
 mod store;
@@ -14,6 +15,7 @@ pub use engine::{
     ToolCallStatus, ToolCallView,
 };
 pub use model::{Conversation, Folder, Message, MessageStatus, ProviderKind, Role};
+pub use ollama::{list_ollama_models, OllamaModel, OllamaTagsResponse};
 pub use provider::{ChatEvent, ProviderConfig};
 pub use settings::AiPrefsReader;
 pub use store::{ConversationStore, FolderStore, MessageStore};

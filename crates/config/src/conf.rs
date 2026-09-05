@@ -7,7 +7,12 @@ use figment::{
 };
 use serde::Deserialize;
 
-use crate::{app::AppConfig, mihomo::MihomoConfig, workspace::WorkspaceConfig};
+use crate::{
+    ai::AiConfig,
+    app::AppConfig,
+    mihomo::MihomoConfig,
+    workspace::WorkspaceConfig,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -17,6 +22,8 @@ pub struct Config {
     pub workspace: WorkspaceConfig,
     #[serde(default)]
     pub mihomo: MihomoConfig,
+    #[serde(default)]
+    pub ai: AiConfig,
 }
 
 impl Config {

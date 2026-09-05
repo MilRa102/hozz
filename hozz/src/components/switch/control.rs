@@ -1,14 +1,27 @@
-use dioxus::prelude::*;
+use ai::{AiPrefsReader, ProviderKind, list_ollama_models};
+use config::CONF;
+use dioxus::{logger::tracing, prelude::*};
+use dioxus_free_icons::icons::md_action_icons::MdAutorenew;
 use prefs::{SettingMeta, SettingType};
 
-use crate::components::input::{SettingSelect, SettingSwitch};
+use crate::{
+    components::input::{SettingSelect, SettingSelectVertical, SettingSwitch},
+    utils::Icon,
+};
 
 #[component]
 pub(crate) fn SettingControl(
     meta: SettingMeta,
     value: String,
+    provider: String,
     onchange: EventHandler<String>,
 ) -> Element {
+    if meta.id == "ai.model" {
+        return rsx! {
+            ModelPicker { current_value: value, provider, onchange }
+        };
+    }
+
     match meta.setting_type {
         SettingType::Toggle => rsx! {
             SettingSwitch {
@@ -18,7 +31,7 @@ pub(crate) fn SettingControl(
         },
         SettingType::Select(options) => rsx! {
             SettingSelect {
-                options: options.to_vec(),
+                options: options.iter().map(|opt| (*opt).to_string()).collect(),
                 selected: value,
                 onselect: move |v| onchange.call(v)
             }
@@ -40,5 +53,101 @@ pub(crate) fn SettingControl(
                 oninput: move |evt| onchange.call(evt.value().clone()),
             }
         },
+    }
+}
+
+#[component]
+fn ModelPicker(
+    current_value: String,
+    provider: String,
+    onchange: EventHandler<String>,
+) -> Element {
+    let prefs = AiPrefsReader;
+    let provider = provider.parse().unwrap_or(ProviderKind::Gemini);
+    let base_url = prefs.ollama_base_url();
+    let mut refresh_tick = use_signal(|| 0usize);
+    let ollama_models = use_resource(move || {
+        let _tick = refresh_tick();
+        let base_url = base_url.clone();
+        async move {
+            if provider != ProviderKind::Ollama {
+                return Vec::<String>::new();
+            }
+            match list_ollama_models(&base_url).await {
+                Ok(models) => models,
+                Err(err) => {
+                    tracing::warn!("Ollama model discovery failed: {err}");
+                    Vec::new()
+                }
+            }
+        }
+    });
+
+    let choices = match provider {
+        ProviderKind::Gemini => CONF.ai.gemini_models.clone(),
+        ProviderKind::Copilot => CONF.ai.copilot_models.clone(),
+        ProviderKind::Ollama => ollama_models.value().read().clone().unwrap_or_default(),
+    };
+
+    let selected = if choices.iter().any(|item| item == &current_value) {
+        current_value.clone()
+    } else if current_value.trim().is_empty() && !choices.is_empty() {
+        choices[0].clone()
+    } else {
+        current_value
+    };
+
+    let loading = provider == ProviderKind::Ollama && ollama_models.value().read().is_none();
+    let has_error = provider == ProviderKind::Ollama && ollama_models.value().read().as_ref().is_some_and(|models| models.is_empty());
+
+    rsx! {
+        div { class: "flex flex-col items-end gap-2 min-w-[16rem]",
+            if choices.is_empty() {
+                div { class: "flex items-center gap-2",
+                    div { class: "flex h-9 w-64 items-center rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-500",
+                        if provider == ProviderKind::Ollama {
+                            "Ollama недоступен или локальных моделей нет"
+                        } else {
+                            "Нет доступных моделей для этого провайдера"
+                        }
+                    }
+                    if provider == ProviderKind::Ollama {
+                        button {
+                            class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white",
+                            title: "Обновить список моделей Ollama",
+                            onclick: move |_| refresh_tick += 1,
+                            Icon { icon: MdAutorenew, size: 17 }
+                        }
+                    }
+                }
+            } else {
+                div { class: "flex items-center gap-2",
+                    SettingSelectVertical {
+                        options: choices.clone(),
+                        selected: selected.clone(),
+                        onselect: move |v| onchange.call(v)
+                    }
+                    if provider == ProviderKind::Ollama {
+                        button {
+                            class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white",
+                            title: "Обновить список моделей Ollama",
+                            onclick: move |_| refresh_tick += 1,
+                            Icon { icon: MdAutorenew, size: 17 }
+                        }
+                    }
+                }
+            }
+            if provider == ProviderKind::Ollama && (loading || has_error || choices.is_empty()) {
+                span { class: "text-xs text-zinc-500",
+                    if loading {
+                        "Загрузка моделей..."
+                    } else if has_error {
+                        "Не удалось получить список Ollama"
+                    } else {
+                        "Модели не найдены"
+                    }
+                }
+            }
+        }
     }
 }
