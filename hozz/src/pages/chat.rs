@@ -15,7 +15,7 @@ use ai::{
 use dioxus::{document::eval, logger::tracing, prelude::*};
 use dioxus_free_icons::icons::{md_action_icons::MdDone, md_alert_icons::MdError};
 use dioxus_icons::lucide::{
-    CircleStop, Loader, MessageCircle, ReceiptText, Send, Trash2,
+    CircleStop, Loader, MessageCircle, PenTool, Send, Sparkles, Trash2,
 };
 use shared::{
     ai::AiRegistry,
@@ -557,33 +557,97 @@ mod chat_area {
         }
     }
 
-    #[component]
-    pub(super) fn BadgeThinking(is_thinking: bool, generation_active: bool) -> Element {
-        if !generation_active {
-            return rsx! {};
-        }
-
-        // Возвращаем полные строки классов для Tailwind
-        let (classes, icon, text) = if is_thinking {
-            (
-                // Используем твои цвета, но добавляем прозрачность (/20) для фона и рамки (/30)
-                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#47568f]/20 text-[#a8bcf8] border-[#47568f]/30",
-                rsx!(Loader { size: "13px" }),
-                "Размышляет",
-            )
+    fn status_badge(is_thinking: bool, animation_class: &str) -> Element {
+        let classes = if is_thinking {
+            "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#47568f]/20 text-[#a8bcf8] border-[#47568f]/30 chat-status-thinking"
         } else {
-            (
-                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#5c3d76]/20 text-[#d5b8f7] border-[#5c3d76]/30",
-                rsx!(ReceiptText { size: "13px" }),
-                "Отвечает",
-            )
+            "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#5c3d76]/20 text-[#d5b8f7] border-[#5c3d76]/30 chat-status-answering"
         };
 
         rsx! {
             span {
-                class: "{classes}",
-                {icon}
-                "{text}"
+                class: "{classes} {animation_class}",
+                if is_thinking {
+                    span { class: "chat-status-sparkles", Sparkles { size: "13px" } }
+                    "Размышляет"
+                } else {
+                    span { class: "chat-status-pen", PenTool { size: "13px" } }
+                    span { class: "relative",
+                        "Отвечает"
+                        span { class: "chat-status-ink", aria_hidden: "true" }
+                    }
+                }
+            }
+        }
+    }
+
+    #[component]
+    pub(super) fn BadgeThinking(is_thinking: bool, generation_active: bool) -> Element {
+        let mut current_status = use_signal(|| is_thinking);
+        let mut leaving_status = use_signal(|| Option::<bool>::None);
+        let mut transition_id = use_signal(|| 0_u64);
+
+        use_effect(move || {
+            if !generation_active {
+                leaving_status.set(None);
+                current_status.set(is_thinking);
+                return;
+            }
+
+            let previous_status = current_status();
+            if previous_status == is_thinking {
+                return;
+            }
+
+            let next_transition_id = transition_id().wrapping_add(1);
+            transition_id.set(next_transition_id);
+            leaving_status.set(Some(previous_status));
+            current_status.set(is_thinking);
+
+            spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(260)).await;
+                if transition_id() == next_transition_id {
+                    leaving_status.set(None);
+                }
+            });
+        });
+
+        if !generation_active {
+            return rsx! {};
+        }
+
+        let current = current_status();
+        let leaving = leaving_status();
+        let entering_class = if leaving.is_some() {
+            if current {
+                "chat-status-enter-from-left"
+            } else {
+                "chat-status-enter-from-right"
+            }
+        } else {
+            ""
+        };
+
+        rsx! {
+            span { class: "relative inline-flex items-center chat-status-container",
+                if let Some(previous) = leaving {
+                    span {
+                        key: "leaving-{transition_id()}-{previous}",
+                        class: "absolute inset-0 inline-flex items-center",
+                        {status_badge(
+                            previous,
+                            if previous {
+                                "chat-status-exit-to-left"
+                            } else {
+                                "chat-status-exit-to-right"
+                            },
+                        )}
+                    }
+                }
+                span {
+                    key: "current-{transition_id()}-{current}",
+                    {status_badge(current, entering_class)}
+                }
             }
         }
     }
