@@ -3,8 +3,8 @@ use dioxus::prelude::*;
 use crate::{
     components::nav::Navbar,
     pages::{
-        chat::ChatPage, home::Home, proxy::ProxyDashboard, resources::SystemResources,
-        setting::SettingsView, vault::VaultPage,
+        chat::ChatPage, home::Home, proxy::ProxyDashboard, setting::SettingsView,
+        vault::VaultPage,
     },
 };
 
@@ -14,9 +14,6 @@ pub enum Route {
     #[layout(Navbar)]
     #[route("/")]
     Home {},
-
-    #[route("/system")]
-    SystemResources { },
 
     #[route("/proxy")]
     ProxyDashboard {},

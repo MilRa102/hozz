@@ -4,12 +4,12 @@ use dioxus::prelude::*;
 use dioxus_free_icons::icons::{
     md_action_icons::{MdLanguage, MdLock, MdSettings},
     md_communication_icons::MdChat,
-    md_hardware_icons::{MdMemory, MdSecurity},
+    md_hardware_icons::MdSecurity,
     md_navigation_icons::MdMenu,
 };
 use shared::apps::{
     Orchestrator, PrefsManager,
-    prefs::{ChatCapability, ResourceCapability, VaultCapability},
+    prefs::{ChatCapability, VaultCapability},
 };
 
 use crate::{route::Route, utils::Icon};
@@ -68,16 +68,6 @@ pub fn Navbar() -> Element {
                     }
                     if is_admin || arch.preference_is_active::<VaultCapability>() {
                         NavItem { to: Route::VaultPage {}, icon: rsx!(Icon { icon: MdLock }), label: "Хранилище", is_expanded: is_expanded() }
-                    }
-
-                    // ГРУППА: СИСТЕМА
-                    if is_admin || arch.preference_is_active::<ResourceCapability>() {
-                        if is_expanded() {
-                            div { class: "text-[10px] font-bold text-zinc-500 mt-2 mb-2 px-2 uppercase tracking-wider whitespace-nowrap", "Система" }
-                        } else {
-                            div { class: "h-px bg-white/10 my-4 mx-2" }
-                        }
-                        NavItem { to: Route::SystemResources {}, icon: rsx!(Icon { icon: MdMemory }), label: "Ресурсы", is_expanded: is_expanded() }
                     }
 
                     // ГРУППА: ПРОДВИНУТЫЕ

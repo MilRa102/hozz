@@ -1,7 +1,6 @@
 pub mod common;
 pub mod profile;
 pub mod proxy;
-pub mod system;
 pub mod tavily;
 
 pub use common::{
@@ -12,5 +11,4 @@ pub use common::{
 };
 pub use profile::ProfileListTool;
 pub use proxy::{ProxyStatusTool, ProxyToggleTool};
-pub use system::SystemResourcesTool;
 pub use tavily::{TavilyExtractTool, TavilySearchTool};

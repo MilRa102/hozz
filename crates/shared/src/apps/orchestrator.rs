@@ -17,7 +17,7 @@ use crate::{
             AiProviderSetting, AiTavilyKeySetting, AllowLanCapability,
             AutostartCapability, ChatCapability, FakeIpCapability,
             FindProcessCapability, GatewayCapability, PolicyCapability,
-            PrefsStore, ResourceCapability, SplitRouteCapability,
+            PrefsStore, SplitRouteCapability,
             SystemProxyCapability, VaultCapability,
         },
         proxy::{ProfileStore, RuleStore},
@@ -151,7 +151,6 @@ impl Orchestrator {
         let mut registry = SettingsRegistry::<Arc<Orchestrator>>::new();
         registry.register(GatewayCapability);
         registry.register(PolicyCapability);
-        registry.register(ResourceCapability);
         registry.register(VaultCapability);
         registry.register(AutostartCapability);
         registry.register(AllowLanCapability);

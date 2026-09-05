@@ -13,8 +13,6 @@ interprocess = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 auto-launch = { workspace = true }
-nvml-wrapper = { workspace = true }
-sysinfo = { workspace = true }
 sysproxy = { workspace = true }
 
 [lints]
