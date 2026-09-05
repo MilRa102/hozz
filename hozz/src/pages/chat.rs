@@ -13,37 +13,14 @@ use ai::{
 };
 use dioxus::{document::eval, logger::tracing, prelude::*};
 use dioxus_icons::lucide::{
-    CircleStop, Loader, Menu, MessageCircle, ReceiptText, Send, Trash2,
+    CircleStop, Loader, MessageCircle, ReceiptText, Send, Trash2,
 };
 use shared::{
     ai::AiRegistry,
     apps::{LoggingLayer, Orchestrator},
 };
-use strum::{Display, EnumIter, IntoEnumIterator};
 
-use crate::components::{
-    dropdown_menu::{
-        DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-    },
-    message::MarkdownMessage,
-};
-
-#[derive(Clone, Copy, Display, EnumIter, PartialEq)]
-enum MenuOperation {
-    #[strum(to_string = "Удалить")]
-    Delete,
-}
-
-impl MenuOperation {
-    fn into_icon(self) -> Element {
-        match self {
-            MenuOperation::Delete => rsx!(Trash2 {
-                size: "13px",
-                style: "color: #ff7777;"
-            }),
-        }
-    }
-}
+use crate::components::message::MarkdownMessage;
 
 /// Преобразует JSON-значение в строку, чтобы его можно было показать в карточке деталей инструмента.
 fn value_to_text(value: &serde_json::Value) -> String {
@@ -178,32 +155,11 @@ mod sidebar {
             "border-transparent text-zinc-400 hover:bg-zinc-900/80 hover:text-zinc-200"
         };
 
-        let menu_operations = MenuOperation::iter().enumerate().map(|(idx, op)| {
-            rsx! {
-                DropdownMenuItem::<MenuOperation> {
-                    key: "{idx}",
-                    value: op,
-                    index: idx,
-                    on_select: {
-                        let conversation_id = conversation.id.clone();
-                        move |selected: MenuOperation| {
-                            match selected {
-                                MenuOperation::Delete => on_delete_conversation.call(conversation_id.clone()),
-                            }
-                        }
-                    },
-                    div { class: "flex items-center gap-2 justify-between w-full",
-                        {op.into_icon()} {op.to_string()}
-                    }
-                }
-            }
-        });
-
         rsx! {
             div {
                 key: "{conversation.id}",
                 class: format!(
-                    "group flex items-center justify-between rounded-xl px-3 py-2.5 gap-6 text-xs transition-all cursor-pointer border {}",
+                    "group flex items-center justify-between rounded-xl px-3 py-2.5 gap-2 text-xs transition-all cursor-pointer border {}",
                     selected_class
                 ),
                 onclick: {
@@ -211,9 +167,17 @@ mod sidebar {
                     move |_| on_select_conversation.call(conversation_id.clone())
                 },
 
-                DropdownMenu { default_open: false,
-                    DropdownMenuTrigger { Menu { size: "16px" } }
-                    DropdownMenuContent { {menu_operations} }
+                button {
+                    class: "p-1.5 rounded-md text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer opacity-0 group-hover:opacity-100",
+                    title: "Удалить",
+                    onclick: {
+                        let conversation_id = conversation.id.clone();
+                        move |evt| {
+                            evt.stop_propagation();
+                            on_delete_conversation.call(conversation_id.clone());
+                        }
+                    },
+                    Trash2 { size: "16px" }
                 }
 
                 span { class: "truncate font-medium pr-2", "{conversation.title}" }
@@ -227,7 +191,6 @@ mod sidebar {
 
 mod chat_area {
     use super::*;
-    use crate::components::badge::{Badge, BadgeVariant};
 
     /// Шапка чата с названием, моделью и статусом генерации.
     #[component]
@@ -240,8 +203,8 @@ mod chat_area {
             div { class: "flex items-center justify-between px-6 py-4 pb-2 bg-zinc-900/20 backdrop-blur-md",
                 div { class: "flex items-center gap-3",
                     h3 { class: "font-medium text-sm text-zinc-100", "{conversation.title}" }
-                    Badge {
-                        variant: BadgeVariant::Primary,
+                    span {
+                        class: "px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border bg-white/5 shadow-sm text-zinc-400 border-white/10 cursor-help",
                         "{conversation.provider} • {conversation.model}"
                     }
                 }
@@ -372,24 +335,25 @@ mod chat_area {
             return rsx! {};
         }
 
-        let (bg_color, icon, text) = if is_thinking {
+        // Возвращаем полные строки классов для Tailwind
+        let (classes, icon, text) = if is_thinking {
             (
-                "#47568f",
+                // Используем твои цвета, но добавляем прозрачность (/20) для фона и рамки (/30)
+                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#47568f]/20 text-[#a8bcf8] border-[#47568f]/30",
                 rsx!(Loader { size: "13px" }),
                 "Размышляет",
             )
         } else {
             (
-                "#5c3d76",
+                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase border shadow-sm bg-[#5c3d76]/20 text-[#d5b8f7] border-[#5c3d76]/30",
                 rsx!(ReceiptText { size: "13px" }),
                 "Отвечает",
             )
         };
 
         rsx! {
-            Badge {
-                variant: BadgeVariant::Secondary,
-                style: format!("background-color: {}", bg_color),
+            span {
+                class: "{classes}",
                 {icon}
                 "{text}"
             }

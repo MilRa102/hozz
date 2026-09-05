@@ -19,7 +19,6 @@ anyhow = { workspace = true }
 interprocess = { workspace = true }
 tokio = { workspace = true, features = ["full", "signal"] }
 serde_json = { workspace = true }
-strum = { workspace = true, features = ["derive"] }
 
 arboard = "3.4"
 base64 = "0.23"
@@ -44,7 +43,6 @@ dioxus-free-icons = { version = "0.10", features = [
     "material-design-icons-navigation",
     "material-design-icons-notification",
 ] }
-dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false }
 
 [build-dependencies]
 winres = "0.1"
