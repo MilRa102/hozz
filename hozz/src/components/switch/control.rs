@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use ai::{AiPrefsReader, ProviderKind, list_ollama_models};
 use config::CONF;
 use dioxus::{logger::tracing, prelude::*};
 use dioxus_free_icons::icons::md_action_icons::MdAutorenew;
 use prefs::{SettingMeta, SettingType};
+use shared::{ai::AiRegistry, apps::{LoggingLayer, Orchestrator}};
 
 use crate::{
     components::input::{SettingSelect, SettingSelectVertical, SettingSwitch},
@@ -19,6 +22,12 @@ pub(crate) fn SettingControl(
     if meta.id == "ai.model" {
         return rsx! {
             ModelPicker { current_value: value, provider, onchange }
+        };
+    }
+
+    if meta.id == "ai.api_key.tavily" {
+        return rsx! {
+            TavilyApiKeyControl { current_value: value, onchange }
         };
     }
 
@@ -53,6 +62,51 @@ pub(crate) fn SettingControl(
                 oninput: move |evt| onchange.call(evt.value().clone()),
             }
         },
+    }
+}
+
+#[component]
+fn TavilyApiKeyControl(
+    current_value: String,
+    onchange: EventHandler<String>,
+) -> Element {
+    let orch = use_context::<Arc<Orchestrator>>();
+    let mut refreshing = use_signal(|| false);
+
+    rsx! {
+        div { class: "flex items-center gap-2",
+            input {
+                class: "bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-white/20 transition-colors w-56",
+                value: "{current_value}",
+                oninput: move |evt| onchange.call(evt.value().clone()),
+            }
+            button {
+                class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white disabled:opacity-60 disabled:cursor-not-allowed",
+                title: if refreshing() { "Обновление инструментов..." } else { "Обновить инструменты Tavily" },
+                disabled: refreshing(),
+                onclick: {
+                    let orch = orch.clone();
+                    move |_| {
+                        if refreshing() {
+                            return;
+                        }
+
+                        refreshing.set(true);
+                        let _ = orch.refresh_tool_server();
+                        let has_tavily = AiPrefsReader.tavily_api_key().is_some();
+
+                        if has_tavily {
+                            orch.ok("AI-инструменты обновлены: Tavily доступен");
+                        } else {
+                            orch.info("AI-инструменты обновлены: Tavily отключён (ключ не задан)");
+                        }
+
+                        refreshing.set(false);
+                    }
+                },
+                Icon { icon: MdAutorenew, size: 17 }
+            }
+        }
     }
 }
 

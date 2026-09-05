@@ -45,10 +45,22 @@ pub(crate) fn Toaster() -> Element {
 #[component]
 fn ToastItem(alert: Alert, on_remove: EventHandler<String>) -> Element {
     let id = alert.id();
+    let mut dismissed = use_signal(|| false);
 
-    use_future(move || async move {
-        sleep(Duration::from_secs(5)).await;
-        on_remove.call(id.to_string());
+    let mut remove_once = move |id: String| {
+        if dismissed() {
+            return;
+        }
+        dismissed.set(true);
+        on_remove.call(id);
+    };
+
+    use_future(move || {
+        let mut remove_once = remove_once.clone();
+        async move {
+            sleep(Duration::from_secs(5)).await;
+            remove_once(id.to_string());
+        }
     });
 
     // Используем hex-цвета из палитры Tailwind для идеального совпадения с цветом бордера
@@ -94,7 +106,9 @@ fn ToastItem(alert: Alert, on_remove: EventHandler<String>) -> Element {
 
             button {
                 class: "shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer",
-                onclick: move |_| on_remove.call(id.to_string()),
+                onclick: move |_| {
+                    remove_once(id.to_string());
+                },
                 Icon { icon: MdClose, color: "#a1a1aa" } // zinc-400
             }
         }

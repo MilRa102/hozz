@@ -492,7 +492,6 @@ mod chat_area {
         on_input: Callback<String>,
         on_submit: Callback<()>,
         on_stop: Callback<()>,
-        on_refresh_tools: Callback<()>,
     ) -> Element {
         rsx! {
             div { class: "px-4 py-3 bg-transparent",
@@ -517,12 +516,6 @@ mod chat_area {
                     div { class: "flex items-center justify-between px-4 py-2.5 bg-transparent rounded-b-2xl",
                         div { class: "text-xs font-mono text-zinc-500", "Enter для отправки • Shift+Enter для переноса • Esc для остановки" }
                         div { class: "flex items-center gap-2",
-                            button {
-                                class: "flex items-center justify-center rounded-xl border border-white/10 bg-zinc-800/80 p-2 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-all cursor-pointer",
-                                title: "Обновить инструменты",
-                                onclick: move |_| on_refresh_tools.call(()),
-                                span { class: "text-lg leading-none", "↻" }
-                            }
                             if generation_active {
                                 button {
                                     class: "flex items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 p-2 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer shadow-lg shadow-red-500/20",
@@ -1085,22 +1078,8 @@ pub fn ChatPage() -> Element {
         }
     }));
 
-    let orch_for_refresh = orch.clone();
-    let handle_refresh_tools = move || {
-        let _ = orch_for_refresh.refresh_tool_server();
-        let has_tavily = AiPrefsReader.tavily_api_key().is_some();
-
-        if has_tavily {
-            orch_for_refresh.info("AI-инструменты обновлены: Tavily доступен");
-        } else {
-            orch_for_refresh.info("AI-инструменты обновлены: Tavily отключён (ключ не задан)");
-        }
-        reload_tick.write();
-    };
-
     let handle_send_for_button = Rc::clone(&handle_send);
     let handle_stop_for_button = Rc::clone(&handle_stop);
-    let mut handle_refresh_tools_for_button = handle_refresh_tools;
 
     rsx! {
         div { class: "flex h-full w-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden",
@@ -1143,9 +1122,6 @@ pub fn ChatPage() -> Element {
                         },
                         on_stop: move |_| {
                             handle_stop_for_button.borrow_mut()();
-                        },
-                        on_refresh_tools: move |_| {
-                            handle_refresh_tools_for_button();
                         },
                     }
                 } else {
