@@ -439,6 +439,7 @@ where
 }
 
 // THE FIX: Clean, closure-based state mapping. No hallucinated structs.
+#[allow(clippy::too_many_lines)]
 async fn run_tool_enabled<M>(
     agent: rig::agent::Agent<M>,
     prompt: String,
