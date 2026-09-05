@@ -15,7 +15,6 @@ publish = false
 anyhow = "1.0.104"
 async-trait = "0.1.91"
 auto-launch = "0.6.0"
-bollard = "0.21"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-humanize = "0.2"
 directories = "6.0"

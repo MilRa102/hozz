@@ -15,10 +15,10 @@ use crate::{
         prefs::{
             AiCopilotKeySetting, AiGeminiKeySetting, AiModelSetting, AiOllamaUrlSetting,
             AiProviderSetting, AiTavilyKeySetting, AllowLanCapability,
-            AutostartCapability, ChatCapability, ContainerCapability,
-            FakeIpCapability, FindProcessCapability, GatewayCapability,
-            PolicyCapability, PrefsStore, ResourceCapability,
-            SplitRouteCapability, SystemProxyCapability, VaultCapability,
+            AutostartCapability, ChatCapability, FakeIpCapability,
+            FindProcessCapability, GatewayCapability, PolicyCapability,
+            PrefsStore, ResourceCapability, SplitRouteCapability,
+            SystemProxyCapability, VaultCapability,
         },
         proxy::{ProfileStore, RuleStore},
         state::StateManager,
@@ -32,7 +32,7 @@ use crate::{
 ///
 /// This module provides a centralized entry point for managing the application's lifecycle,
 /// configuration, and state. It coordinates various subsystems including database storage,
-/// proxy management, container capabilities, and background tasks.
+/// proxy management, and background tasks.
 ///
 /// The `ORCH` static variable holds the single instance of this orchestrator, ensuring
 /// that only one orchestrator exists throughout the application's lifetime.
@@ -40,10 +40,10 @@ pub static ORCH: OnceCell<Arc<Orchestrator>> = OnceCell::const_new();
 
 /// The main orchestrator struct that coordinates all application subsystems.
 ///
-/// This struct encapsulates the state and logic required to manage the proxy, containers,
-/// and other core features of the application. It uses atomic booleans for thread-safe
-/// activity tracking and integrates with various stores (database, preferences, vaults)
-/// to maintain a consistent application state.
+/// This struct encapsulates the state and logic required to manage the proxy and other
+/// core features of the application. It uses atomic booleans for thread-safe activity
+/// tracking and integrates with various stores (database, preferences, vaults) to maintain
+/// a consistent application state.
 ///
 /// # Fields
 /// * `active` - An atomic boolean indicating whether the application is currently active.
@@ -149,7 +149,6 @@ impl Orchestrator {
 
         // Create a new settings registry and register all available capabilities.
         let mut registry = SettingsRegistry::<Arc<Orchestrator>>::new();
-        registry.register(ContainerCapability);
         registry.register(GatewayCapability);
         registry.register(PolicyCapability);
         registry.register(ResourceCapability);

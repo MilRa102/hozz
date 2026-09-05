@@ -1,6 +1,5 @@
 mod alert;
 mod app_store;
-pub mod docker;
 mod orchestrator;
 pub mod prefs;
 pub mod proxy;

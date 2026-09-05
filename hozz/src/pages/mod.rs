@@ -1,6 +1,5 @@
 pub mod app;
 pub mod chat;
-pub mod docker;
 pub mod errors;
 pub mod home;
 pub mod loading;

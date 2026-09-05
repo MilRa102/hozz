@@ -1,5 +1,4 @@
 mod ai;
-mod containers;
 mod gateway;
 mod policy;
 mod resources;
@@ -9,7 +8,6 @@ pub use ai::{
     AiCopilotKeySetting, AiGeminiKeySetting, AiModelSetting, AiOllamaUrlSetting,
     AiProviderSetting, AiTavilyKeySetting, ChatCapability,
 };
-pub use containers::ContainerCapability;
 pub use gateway::GatewayCapability;
 pub use policy::PolicyCapability;
 pub use resources::ResourceCapability;
