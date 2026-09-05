@@ -279,11 +279,7 @@ fn parse_tavily_extract_payload(group: &ToolGroup) -> Option<TavilyExtractPanel>
             Some(combined)
         }
         serde_json::Value::Object(obj) => {
-            if let Ok(panel) = serde_json::from_value::<TavilyExtractPanel>(serde_json::Value::Object(obj)) {
-                Some(panel)
-            } else {
-                None
-            }
+            serde_json::from_value::<TavilyExtractPanel>(serde_json::Value::Object(obj)).ok()
         }
         _ => None,
     }

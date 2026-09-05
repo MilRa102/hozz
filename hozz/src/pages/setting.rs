@@ -48,7 +48,6 @@ pub fn SettingsView() -> Element {
         .unwrap_or_else(|| "gemini".to_string());
     let settings_to_render: Vec<(SettingMeta, String, String, String)> = displayed_settings
         .iter()
-        .cloned()
         .map(|meta| {
             let value_key = if meta.id == "ai.model" {
                 format!("ai.model.{active_provider}")

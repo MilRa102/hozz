@@ -17,7 +17,11 @@ pub trait AiRegistry {
 
 impl AiRegistry for Orchestrator {
     fn tool_server(self: &Arc<Self>) -> ToolServerHandle {
-        let guard = self.ai_tool_server.read().unwrap();
+        let guard = self.ai_tool_server.read().unwrap_or_else(|poisoned| {
+            tracing::warn!("ai_tool_server read lock poisoned; recovering");
+            poisoned.into_inner()
+        });
+
         if let Some(server) = guard.clone() {
             return server;
         }
@@ -42,7 +46,10 @@ impl AiRegistry for Orchestrator {
             builder.run()
         };
 
-        let mut guard = self.ai_tool_server.write().unwrap();
+        let mut guard = self.ai_tool_server.write().unwrap_or_else(|poisoned| {
+            tracing::warn!("ai_tool_server lock poisoned; recovering");
+            poisoned.into_inner()
+        });
         *guard = Some(server.clone());
         server
     }

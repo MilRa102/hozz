@@ -56,7 +56,7 @@ fn ToastItem(alert: Alert, on_remove: EventHandler<String>) -> Element {
     };
 
     use_future(move || {
-        let mut remove_once = remove_once.clone();
+        let mut remove_once = remove_once;
         async move {
             sleep(Duration::from_secs(5)).await;
             remove_once(id.to_string());
