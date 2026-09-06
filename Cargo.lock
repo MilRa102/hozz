@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "ai"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "anyhow",
  "directories",
@@ -2571,7 +2571,7 @@ dependencies = [
 
 [[package]]
 name = "db"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "anyhow",
  "config",
@@ -4513,7 +4513,7 @@ dependencies = [
 
 [[package]]
 name = "hozz"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "ai",
  "anyhow",
@@ -6199,7 +6199,7 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
 name = "machine"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "anyhow",
  "auto-launch",
@@ -7680,7 +7680,7 @@ checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 
 [[package]]
 name = "prefs"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8468,7 +8468,7 @@ dependencies = [
 
 [[package]]
 name = "rest"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9250,7 +9250,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "ai",
  "anyhow",
@@ -9902,7 +9902,7 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "telemetry"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "anyhow",
  "config",
