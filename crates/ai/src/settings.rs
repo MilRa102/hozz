@@ -28,6 +28,9 @@ impl AiPrefsReader {
     pub const KEY_MEMORY_POLICY: &'static str = "ai.memory.policy";
     pub const KEY_MEMORY_MAX_TOKENS: &'static str = "ai.memory.max_tokens";
     pub const KEY_MEMORY_MAX_MESSAGES: &'static str = "ai.memory.max_messages";
+    pub const KEY_MEMORY_MAP_ENABLED: &'static str = "ai.memory_map.enabled";
+    pub const KEY_MEMORY_MAP_PROVIDER: &'static str = "ai.memory_map.embedding.provider";
+    pub const KEY_MEMORY_MAP_MODEL: &'static str = "ai.memory_map.embedding.model";
 
     fn value(&self, key: &str) -> Option<String> {
         SledManager::get(self, key)
@@ -122,6 +125,28 @@ impl AiPrefsReader {
             .filter(|count| *count > 0)
             .unwrap_or(crate::memory::DEFAULT_MAX_MESSAGES)
     }
+
+    pub fn memory_map_enabled(&self) -> bool {
+        self.value(Self::KEY_MEMORY_MAP_ENABLED)
+            .map(|v| v.parse().unwrap_or(false))
+            .unwrap_or(false)
+    }
+
+    pub fn memory_map_provider(&self) -> Option<ProviderKind> {
+        self.value(Self::KEY_MEMORY_MAP_PROVIDER)
+            .and_then(|v| v.parse().ok())
+            .or(self.provider())
+    }
+
+    pub fn memory_map_model(&self, provider: ProviderKind) -> String {
+        self.value(Self::KEY_MEMORY_MAP_MODEL)
+            .or_else(|| self.provider_model(provider))
+            .unwrap_or_else(|| match provider {
+                ProviderKind::Gemini => "gemini-embedding-001".to_string(),
+                ProviderKind::Copilot => "text-embedding-3-small".to_string(),
+                ProviderKind::Ollama => "all-minilm".to_string(),
+            })
+    }
 }
 
 #[cfg(test)]
@@ -158,6 +183,29 @@ mod tests {
         init_db();
         set_pref(AiPrefsReader::KEY_ENABLED, "true");
         assert!(AiPrefsReader.is_enabled());
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn memory_map_toggle_reads_stored_bool() {
+        let _guard = PREF_LOCK.lock().unwrap();
+        init_db();
+        set_pref(AiPrefsReader::KEY_MEMORY_MAP_ENABLED, "true");
+        assert!(AiPrefsReader.memory_map_enabled());
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn memory_map_provider_and_model_use_override_keys_when_present() {
+        let _guard = PREF_LOCK.lock().unwrap();
+        init_db();
+        set_pref(AiPrefsReader::KEY_PROVIDER, "gemini");
+        set_pref(AiPrefsReader::KEY_MEMORY_MAP_PROVIDER, "ollama");
+        set_pref(AiPrefsReader::KEY_MEMORY_MAP_MODEL, "all-minilm");
+
+        let reader = AiPrefsReader;
+        assert_eq!(reader.memory_map_provider(), Some(ProviderKind::Ollama));
+        assert_eq!(reader.memory_map_model(ProviderKind::Ollama), "all-minilm");
     }
 
     #[test]

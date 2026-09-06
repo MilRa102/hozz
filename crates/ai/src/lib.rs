@@ -1,6 +1,8 @@
 mod control;
+mod embedding;
 mod engine;
 mod memory;
+mod memory_map;
 mod model;
 mod ollama;
 mod provider;
@@ -11,6 +13,10 @@ mod test_support;
 mod title;
 
 pub use control::StreamControl;
+pub use embedding::{
+    MemoryMapDocument, MemoryMapHit, MemoryMapRetriever, memory_map_context,
+    search_memory_map,
+};
 pub use engine::{
     GenerationEvent, GenerationManager, GenerationRequest, GenerationSnapshot,
     GenerationStatus, ToolCallStatus, ToolCallView,
@@ -18,6 +24,7 @@ pub use engine::{
 pub use memory::{
     MemoryPolicyKind, SledConversationMemory, build_memory, build_memory_with_hook,
 };
+pub use memory_map::{MemoryMapEntry, MemoryMapStore};
 pub use model::{
     Conversation, ConversationUsage, Folder, Message, MessageStatus, ProviderKind, Role,
 };

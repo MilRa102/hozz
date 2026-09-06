@@ -189,10 +189,27 @@ impl GenerationManager {
                 },
             };
 
+            let prompt = if AiPrefsReader.memory_map_enabled() {
+                let hits = crate::embedding::search_memory_map(&request.system_prompt, 5).await;
+                match hits {
+                    Ok(hits) if !hits.is_empty() => {
+                        let context = crate::embedding::memory_map_context(&hits);
+                        if context.is_empty() {
+                            request.system_prompt
+                        } else {
+                            format!("{context}\n\n{}", request.system_prompt)
+                        }
+                    },
+                    Ok(_) | Err(_) => request.system_prompt,
+                }
+            } else {
+                request.system_prompt
+            };
+
             let stream_result = provider::start_stream(
                 &request.config,
                 &request.model,
-                request.system_prompt,
+                prompt,
                 history,
                 request.tools,
                 request.max_tool_turns,
