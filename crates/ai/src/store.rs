@@ -1,6 +1,9 @@
 use db::SledManager;
 
-use crate::model::{Conversation, ConversationUsage, Folder, Message};
+use crate::{
+    MemoryMapStore,
+    model::{Conversation, ConversationUsage, Folder, Message},
+};
 
 /// Conversations and folders each get their own dedicated Sled tree, keyed
 /// directly by id — no risk of mixing archived byte layouts of different types.
@@ -46,7 +49,8 @@ impl ConversationStore {
     /// Deletes the conversation and (atomically) all of its messages.
     pub fn remove(&self, id: &str) -> anyhow::Result<()> {
         SledManager::delete(self, id)?;
-        MessageStore.delete_all(id)
+        MessageStore.delete_all(id)?;
+        MemoryMapStore.remove_for_conversation(id)
     }
 
     /// Unassigns every conversation currently in `folder_id` (used when a folder
@@ -141,6 +145,7 @@ impl FolderStore {
 mod tests {
     use super::*;
     use crate::{
+        MemoryMapEntry,
         model::{ProviderKind, Role},
         test_support::init_db,
     };
@@ -239,6 +244,11 @@ mod tests {
                 &Message::new(Role::User, "unrelated", "{}"),
             )
             .unwrap();
+        let memory_entry =
+            MemoryMapEntry::new(&conversation.id, "remember this", vec![0.1]);
+        MemoryMapStore
+            .replace_for_conversation(&conversation.id, &memory_entry)
+            .unwrap();
 
         ConversationStore
             .remove(&conversation.id)
@@ -249,6 +259,11 @@ mod tests {
                 .list(&conversation.id)
                 .unwrap()
                 .is_empty()
+        );
+        assert!(
+            SledManager::get(&MemoryMapStore, &conversation.id)
+                .unwrap()
+                .is_none()
         );
         assert_eq!(MessageStore.list(&other.id).unwrap().len(), 1);
     }

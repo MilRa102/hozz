@@ -9,12 +9,14 @@ use rig::{
     wasm_compat::WasmBoxedFuture,
 };
 use rig_memory::{
-    DemotingPolicyMemory, HeuristicTokenCounter, NoopMemoryPolicy, PolicyMemory,
-    SlidingWindowMemory, TokenWindowMemory,
+    DemotingPolicyMemory, HeuristicTokenCounter, MemoryPolicy, NoopMemoryPolicy,
+    PolicyMemory, SlidingWindowMemory, TokenWindowMemory,
 };
 
 use crate::{
+    embedding::embed_memory_map_document,
     engine::history_message,
+    memory_map::{MemoryMapEntry, MemoryMapStore},
     model::{Message, Role},
     settings::AiPrefsReader,
     store::MessageStore,
@@ -240,6 +242,92 @@ where
     }
 }
 
+/// Persists the complete demoted prefix of a conversation as one vector document.
+/// It recomputes that prefix from Sled on every delivery because Rig's delivery
+/// watermark is process-local and repeated deliveries must replace, not duplicate.
+#[derive(Clone)]
+pub(crate) struct MemoryMapDemotionHook {
+    store: Arc<MessageStore>,
+}
+
+impl MemoryMapDemotionHook {
+    pub(crate) fn new(store: Arc<MessageStore>) -> Self {
+        Self { store }
+    }
+}
+
+impl DemotionHook for MemoryMapDemotionHook {
+    fn on_demote<'a>(
+        &'a self,
+        conversation_id: &'a str,
+        _messages: Vec<RigMessage>,
+    ) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
+        Box::pin(async move {
+            let stored = self
+                .store
+                .list(conversation_id)
+                .map_err(MemoryError::backend)?;
+            let history = stored.iter().map(history_message).collect();
+            let demoted = demoted_history(&AiPrefsReader, history)?;
+            let content = format_memory_map_document(&demoted);
+            let memory_map = MemoryMapStore;
+
+            if content.is_empty() {
+                return memory_map
+                    .remove_for_conversation(conversation_id)
+                    .map_err(MemoryError::backend);
+            }
+
+            let embedding = embed_memory_map_document(&content)
+                .await
+                .map_err(MemoryError::backend)?;
+            memory_map
+                .replace_for_conversation(
+                    conversation_id,
+                    &MemoryMapEntry::new(conversation_id, content, embedding),
+                )
+                .map_err(MemoryError::backend)
+        })
+    }
+}
+
+fn demoted_history(
+    prefs: &AiPrefsReader,
+    history: Vec<RigMessage>,
+) -> Result<Vec<RigMessage>, MemoryError> {
+    match prefs.memory_policy() {
+        MemoryPolicyKind::None => Ok(Vec::new()),
+        MemoryPolicyKind::TokenWindow => token_window(prefs)
+            .apply_with_demoted(history)
+            .map(|(_, demoted)| demoted),
+        MemoryPolicyKind::SlidingWindow => sliding_window(prefs)
+            .apply_with_demoted(history)
+            .map(|(_, demoted)| demoted),
+    }
+}
+
+fn format_memory_map_document(messages: &[RigMessage]) -> String {
+    messages
+        .iter()
+        .filter_map(|message| match message {
+            RigMessage::System { content } if !content.trim().is_empty() => {
+                Some(format!("Система: {}", content.trim()))
+            },
+            RigMessage::User { content } => {
+                let text = user_text(content);
+                (!text.trim().is_empty())
+                    .then(|| format!("Пользователь: {}", text.trim()))
+            },
+            RigMessage::Assistant { content, .. } => {
+                let text = assistant_text(content);
+                (!text.trim().is_empty()).then(|| format!("Ассистент: {}", text.trim()))
+            },
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 #[cfg(test)]
 mod tests {
     use rig_memory::MemoryPolicy;
@@ -346,5 +434,18 @@ mod tests {
     fn built_memory_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync + ?Sized>() {}
         assert_send_sync::<dyn ConversationMemory>();
+    }
+
+    #[test]
+    fn memory_map_document_labels_textual_messages() {
+        let document = format_memory_map_document(&[
+            RigMessage::user("remember this"),
+            RigMessage::assistant("I will remember"),
+        ]);
+
+        assert_eq!(
+            document,
+            "Пользователь: remember this\n\nАссистент: I will remember"
+        );
     }
 }

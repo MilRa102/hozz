@@ -1,10 +1,9 @@
 use rig::{
     client::{EmbeddingsClient, Nothing},
-    embeddings::Embedding,
+    embeddings::{Embedding, EmbeddingModel},
     providers::{gemini, ollama},
     vector_store::{
-        VectorSearchRequest, VectorStoreIndex,
-        in_memory_store::InMemoryVectorStore,
+        VectorSearchRequest, VectorStoreIndex, in_memory_store::InMemoryVectorStore,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -50,7 +49,11 @@ impl MemoryMapRetriever {
         }
     }
 
-    pub async fn search(&self, query: &str, limit: usize) -> anyhow::Result<Vec<MemoryMapHit>> {
+    pub async fn search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<MemoryMapHit>> {
         let records = self.store.recent(100)?;
         if records.is_empty() || query.trim().is_empty() {
             return Ok(Vec::new());
@@ -64,7 +67,11 @@ impl MemoryMapRetriever {
                 } else {
                     Some(Embedding {
                         document: entry.content.clone(),
-                        vec: entry.embed.iter().map(|value| *value as f64).collect(),
+                        vec: entry
+                            .embed
+                            .iter()
+                            .map(|value| *value as f64)
+                            .collect(),
                     })
                 };
                 embedding.map(|embedding| {
@@ -93,8 +100,8 @@ impl MemoryMapRetriever {
                 }
                 let client = gemini::Client::new(api_key)?;
                 let model = client.embedding_model(self.model.as_str());
-                let index = InMemoryVectorStore::from_documents_with_ids(documents)
-                    .index(model);
+                let index =
+                    InMemoryVectorStore::from_documents_with_ids(documents).index(model);
                 let req = VectorSearchRequest::builder()
                     .query(query)
                     .samples(limit as u64)
@@ -107,8 +114,8 @@ impl MemoryMapRetriever {
                     .base_url(&self.ollama_base_url)
                     .build()?;
                 let model = client.embedding_model(self.model.as_str());
-                let index = InMemoryVectorStore::from_documents_with_ids(documents)
-                    .index(model);
+                let index =
+                    InMemoryVectorStore::from_documents_with_ids(documents).index(model);
                 let req = VectorSearchRequest::builder()
                     .query(query)
                     .samples(limit as u64)
@@ -137,8 +144,54 @@ impl MemoryMapRetriever {
     }
 }
 
-pub async fn search_memory_map(query: &str, limit: usize) -> anyhow::Result<Vec<MemoryMapHit>> {
-    MemoryMapRetriever::from_prefs().search(query, limit).await
+pub async fn search_memory_map(
+    query: &str,
+    limit: usize,
+) -> anyhow::Result<Vec<MemoryMapHit>> {
+    MemoryMapRetriever::from_prefs()
+        .search(query, limit)
+        .await
+}
+
+pub(crate) async fn embed_memory_map_document(content: &str) -> anyhow::Result<Vec<f32>> {
+    let prefs = AiPrefsReader;
+    let provider = prefs
+        .memory_map_provider()
+        .unwrap_or_else(|| prefs.provider().unwrap_or(ProviderKind::Gemini));
+    let model_name = prefs.memory_map_model(provider);
+
+    let embedding = match provider {
+        ProviderKind::Gemini => {
+            let api_key = prefs.gemini_api_key().unwrap_or_default();
+            if api_key.trim().is_empty() {
+                anyhow::bail!("a Gemini API key is required to embed the memory map");
+            }
+            let client = gemini::Client::new(api_key)?;
+            client
+                .embedding_model(model_name)
+                .embed_text(content)
+                .await?
+        },
+        ProviderKind::Ollama => {
+            let client = ollama::Client::builder()
+                .api_key(Nothing)
+                .base_url(prefs.ollama_base_url())
+                .build()?;
+            client
+                .embedding_model(model_name)
+                .embed_text(content)
+                .await?
+        },
+        ProviderKind::Copilot => {
+            anyhow::bail!("Copilot embeddings are not enabled for the memory map yet");
+        },
+    };
+
+    Ok(embedding
+        .vec
+        .into_iter()
+        .map(|value| value as f32)
+        .collect())
 }
 
 pub fn memory_map_context(entries: &[MemoryMapHit]) -> String {
