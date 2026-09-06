@@ -13,9 +13,10 @@ use crate::{
     apps::{
         app_store::AppStore,
         prefs::{
-            AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMaxMessagesSetting,
-            AiMemoryMaxTokensSetting, AiMemoryPolicySetting, AiModelSetting,
-            AiOllamaUrlSetting, AiProviderSetting, AiTavilyKeySetting,
+            AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMapEnabledSetting,
+            AiMemoryMapModelSetting, AiMemoryMapProviderSetting,
+            AiMemoryMaxMessagesSetting, AiMemoryMaxTokensSetting, AiMemoryPolicySetting,
+            AiModelSetting, AiOllamaUrlSetting, AiProviderSetting, AiTavilyKeySetting,
             AllowLanCapability, AutostartCapability, ChatCapability, FakeIpCapability,
             FindProcessCapability, GatewayCapability, PolicyCapability, PrefsStore,
             SplitRouteCapability, SystemProxyCapability, VaultCapability,
@@ -159,6 +160,9 @@ impl Orchestrator {
         registry.register(AiCopilotKeySetting);
         registry.register(AiTavilyKeySetting);
         registry.register(AiOllamaUrlSetting);
+        registry.register(AiMemoryMapEnabledSetting);
+        registry.register(AiMemoryMapProviderSetting);
+        registry.register(AiMemoryMapModelSetting);
         registry.register(AiMemoryPolicySetting);
         registry.register(AiMemoryMaxTokensSetting);
         registry.register(AiMemoryMaxMessagesSetting);

@@ -10,6 +10,15 @@ use prefs::{
 use crate::apps::{LoggingLayer, Orchestrator, PrefsManager};
 
 const PROVIDER_OPTIONS: &[&str] = &["gemini", "copilot", "ollama"];
+const EMBEDDING_PROVIDER_OPTIONS: &[&str] = &["gemini", "ollama"];
+const MEMORY_MAP_EMBEDDING_MODELS: &[&str] = &[
+    "gemini-embedding-001",
+    "text-embedding-004",
+    "text-embedding-3-small",
+    "text-embedding-3-large",
+    "all-minilm",
+    "nomic-embed-text",
+];
 const MEMORY_POLICY_OPTIONS: &[&str] = &["none", "token", "sliding"];
 const MEMORY_MIN_TOKENS: i32 = 1_024;
 const MEMORY_MAX_TOKENS: i32 = 1_000_000;
@@ -255,6 +264,115 @@ impl PreferenceHook<Arc<Orchestrator>> for AiOllamaUrlSetting {
     ) -> anyhow::Result<()> {
         if !(new.starts_with("http://") || new.starts_with("https://")) {
             anyhow::bail!("Ollama URL должен начинаться с http:// или https://");
+        }
+        Ok(())
+    }
+
+    async fn actual_state(
+        &self,
+        orch: Arc<Orchestrator>,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+}
+
+pub struct AiMemoryMapEnabledSetting;
+
+impl PreferenceKey for AiMemoryMapEnabledSetting {
+    const ID: &'static str = "ai.memory_map.enabled";
+}
+
+#[async_trait]
+impl PreferenceHook<Arc<Orchestrator>> for AiMemoryMapEnabledSetting {
+    fn meta(&self) -> SettingMeta {
+        SettingMeta {
+            id: Self::ID,
+            title: "Карта памяти",
+            description: "Включить семантический поиск по сохранённым фрагментам истории через embedding-модель.",
+            tags: &["ai", "memory", "map", "embedding", "поиск"],
+            category: Category::Advanced,
+            setting_type: SettingType::Toggle,
+            requirements: &[Requirement::Restart],
+            default_value: "false",
+        }
+    }
+
+    async fn actual_state(
+        &self,
+        orch: Arc<Orchestrator>,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+}
+
+pub struct AiMemoryMapProviderSetting;
+
+impl PreferenceKey for AiMemoryMapProviderSetting {
+    const ID: &'static str = "ai.memory_map.embedding.provider";
+}
+
+#[async_trait]
+impl PreferenceHook<Arc<Orchestrator>> for AiMemoryMapProviderSetting {
+    fn meta(&self) -> SettingMeta {
+        SettingMeta {
+            id: Self::ID,
+            title: "Провайдер embedding для карты памяти",
+            description: "Провайдер, который будет использоваться для семантического поиска по памяти.",
+            tags: &["ai", "memory", "embedding", "provider", "поиск"],
+            category: Category::Advanced,
+            setting_type: SettingType::Select(EMBEDDING_PROVIDER_OPTIONS),
+            requirements: &[Requirement::Restart],
+            default_value: "gemini",
+        }
+    }
+
+    async fn before_execute(
+        &self,
+        _orch: Arc<Orchestrator>,
+        new: &str,
+    ) -> anyhow::Result<()> {
+        if !EMBEDDING_PROVIDER_OPTIONS.contains(&new) {
+            anyhow::bail!("Неподдерживаемый провайдер embedding: {new}");
+        }
+        Ok(())
+    }
+
+    async fn actual_state(
+        &self,
+        orch: Arc<Orchestrator>,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+}
+
+pub struct AiMemoryMapModelSetting;
+
+impl PreferenceKey for AiMemoryMapModelSetting {
+    const ID: &'static str = "ai.memory_map.embedding.model";
+}
+
+#[async_trait]
+impl PreferenceHook<Arc<Orchestrator>> for AiMemoryMapModelSetting {
+    fn meta(&self) -> SettingMeta {
+        SettingMeta {
+            id: Self::ID,
+            title: "Модель embedding для карты памяти",
+            description: "Модель embedding, которая будет использоваться для поиска по карте памяти.",
+            tags: &["ai", "memory", "embedding", "model", "поиск"],
+            category: Category::Advanced,
+            setting_type: SettingType::Select(MEMORY_MAP_EMBEDDING_MODELS),
+            requirements: &[Requirement::Restart],
+            default_value: "gemini-embedding-001",
+        }
+    }
+
+    async fn before_execute(
+        &self,
+        _orch: Arc<Orchestrator>,
+        new: &str,
+    ) -> anyhow::Result<()> {
+        if !MEMORY_MAP_EMBEDDING_MODELS.contains(&new) {
+            anyhow::bail!("Неподдерживаемая модель embedding: {new}");
         }
         Ok(())
     }
