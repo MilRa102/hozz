@@ -46,7 +46,15 @@ pub fn SettingsView() -> Element {
                 .map(|pref| pref.value)
         })
         .unwrap_or_else(|| "gemini".to_string());
-    let settings_to_render: Vec<(SettingMeta, String, String, String)> =
+    let active_embedding_provider = states()
+        .get("ai.memory_map.embedding.provider")
+        .cloned()
+        .or_else(|| {
+            orch.get_origin("ai.memory_map.embedding.provider")
+                .map(|pref| pref.value)
+        })
+        .unwrap_or_else(|| "gemini".to_string());
+    let settings_to_render: Vec<(SettingMeta, String, String, String, String)> =
         displayed_settings
             .iter()
             .map(|meta| {
@@ -63,11 +71,17 @@ pub fn SettingsView() -> Element {
                             .map(|pref| pref.value)
                             .unwrap_or_else(|| meta.default_value.to_string())
                     });
+                let provider_for_row = if meta.id == "ai.memory_map.embedding.model" {
+                    active_embedding_provider.clone()
+                } else {
+                    active_provider.clone()
+                };
                 (
                     meta.clone(),
                     value,
                     meta.id.to_string(),
                     value_key,
+                    provider_for_row,
                 )
             })
             .collect();
@@ -149,12 +163,12 @@ pub fn SettingsView() -> Element {
                                     }
                                 } else {
                                     div { class: "bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col shadow-sm divide-y divide-white/5",
-                                        for (meta, value, id, state_id) in settings_to_render.iter().cloned() {
+                                        for (meta, value, id, state_id, provider_for_row) in settings_to_render.iter().cloned() {
                                             SettingRow {
                                                 key: "{meta.id}",
                                                 meta: meta.clone(),
                                                 value: value.clone(),
-                                                provider: active_provider.clone(),
+                                                provider: provider_for_row.clone(),
                                                 onchange: {
                                                     let orch = orch.clone();
                                                     move |new_value: String| {
@@ -196,12 +210,12 @@ pub fn SettingsView() -> Element {
                                     }
                                 } else {
                                     div { class: "bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col shadow-sm divide-y divide-white/5",
-                                        for (meta, value, id, state_id) in settings_to_render.iter().cloned() {
+                                        for (meta, value, id, state_id, provider_for_row) in settings_to_render.iter().cloned() {
                                             SettingRow {
                                                 key: "{meta.id}",
                                                 meta: meta.clone(),
                                                 value: value.clone(),
-                                                provider: active_provider.clone(),
+                                                provider: provider_for_row.clone(),
                                                 onchange: {
                                                     let orch = orch.clone();
                                                     move |new_value: String| {

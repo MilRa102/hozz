@@ -25,6 +25,12 @@ pub(crate) fn SettingControl(
         };
     }
 
+    if meta.id == "ai.memory_map.embedding.model" {
+        return rsx! {
+            EmbeddingModelPicker { current_value: value, provider, onchange }
+        };
+    }
+
     if meta.id == "ai.api_key.tavily" {
         return rsx! {
             TavilyApiKeyControl { current_value: value, onchange }
@@ -62,6 +68,44 @@ pub(crate) fn SettingControl(
                 oninput: move |evt| onchange.call(evt.value().clone()),
             }
         },
+    }
+}
+
+#[component]
+fn EmbeddingModelPicker(
+    current_value: String,
+    provider: String,
+    onchange: EventHandler<String>,
+) -> Element {
+    let choices = match provider.as_str() {
+        "ollama" => vec![
+            "all-minilm".to_string(),
+            "nomic-embed-text".to_string(),
+        ],
+        _ => vec![
+            "gemini-embedding-001".to_string(),
+            "text-embedding-004".to_string(),
+            "text-embedding-3-small".to_string(),
+            "text-embedding-3-large".to_string(),
+        ],
+    };
+
+    let selected = if choices.iter().any(|item| item == &current_value) {
+        current_value.clone()
+    } else if current_value.trim().is_empty() && !choices.is_empty() {
+        choices[0].clone()
+    } else {
+        current_value
+    };
+
+    rsx! {
+        div { class: "flex items-center gap-2",
+            SettingSelectVertical {
+                options: choices,
+                selected: selected.clone(),
+                onselect: move |v| onchange.call(v)
+            }
+        }
     }
 }
 
