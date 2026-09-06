@@ -33,7 +33,10 @@ pub async fn list_ollama_models(base_url: &str) -> Result<Vec<String>> {
         .with_context(|| format!("failed to fetch Ollama models from {url}"))?;
 
     if !response.status().is_success() {
-        anyhow::bail!("Ollama API returned status {} for {url}", response.status());
+        anyhow::bail!(
+            "Ollama API returned status {} for {url}",
+            response.status()
+        );
     }
 
     let payload: OllamaTagsResponse = response
@@ -64,21 +67,35 @@ mod tests {
     fn parses_valid_ollama_tags_response() {
         let payload = OllamaTagsResponse {
             models: vec![
-                OllamaModel { name: "llama3.2".to_string() },
-                OllamaModel { name: "qwen2.5".to_string() },
+                OllamaModel {
+                    name: "llama3.2".to_string(),
+                },
+                OllamaModel {
+                    name: "qwen2.5".to_string(),
+                },
             ],
         };
 
-        let names: Vec<String> = payload.models.into_iter().map(|m| m.name).collect();
+        let names: Vec<String> = payload
+            .models
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
         assert_eq!(names, vec!["llama3.2", "qwen2.5"]);
     }
 
     #[test]
     fn deduplicates_model_names() {
         let models = vec![
-            OllamaModel { name: "llama3".to_string() },
-            OllamaModel { name: "llama3".to_string() },
-            OllamaModel { name: "  qwen2.5  ".to_string() },
+            OllamaModel {
+                name: "llama3".to_string(),
+            },
+            OllamaModel {
+                name: "llama3".to_string(),
+            },
+            OllamaModel {
+                name: "  qwen2.5  ".to_string(),
+            },
         ];
 
         let mut unique = Vec::new();

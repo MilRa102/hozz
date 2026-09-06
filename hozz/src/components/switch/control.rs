@@ -5,7 +5,10 @@ use config::CONF;
 use dioxus::{logger::tracing, prelude::*};
 use dioxus_icons::lucide::RefreshCw;
 use prefs::{SettingMeta, SettingType};
-use shared::{ai::AiRegistry, apps::{LoggingLayer, Orchestrator}};
+use shared::{
+    ai::AiRegistry,
+    apps::{LoggingLayer, Orchestrator},
+};
 
 use crate::components::input::{SettingSelect, SettingSelectVertical, SettingSwitch};
 
@@ -63,10 +66,7 @@ pub(crate) fn SettingControl(
 }
 
 #[component]
-fn TavilyApiKeyControl(
-    current_value: String,
-    onchange: EventHandler<String>,
-) -> Element {
+fn TavilyApiKeyControl(current_value: String, onchange: EventHandler<String>) -> Element {
     let orch = use_context::<Arc<Orchestrator>>();
     let mut refreshing = use_signal(|| false);
 
@@ -129,7 +129,7 @@ fn ModelPicker(
                 Err(err) => {
                     tracing::warn!("Ollama model discovery failed: {err}");
                     Vec::new()
-                }
+                },
             }
         }
     });
@@ -137,7 +137,11 @@ fn ModelPicker(
     let choices = match provider {
         ProviderKind::Gemini => CONF.ai.gemini_models.clone(),
         ProviderKind::Copilot => CONF.ai.copilot_models.clone(),
-        ProviderKind::Ollama => ollama_models.value().read().clone().unwrap_or_default(),
+        ProviderKind::Ollama => ollama_models
+            .value()
+            .read()
+            .clone()
+            .unwrap_or_default(),
     };
 
     let selected = if choices.iter().any(|item| item == &current_value) {
@@ -148,8 +152,14 @@ fn ModelPicker(
         current_value
     };
 
-    let loading = provider == ProviderKind::Ollama && ollama_models.value().read().is_none();
-    let has_error = provider == ProviderKind::Ollama && ollama_models.value().read().as_ref().is_some_and(|models| models.is_empty());
+    let loading =
+        provider == ProviderKind::Ollama && ollama_models.value().read().is_none();
+    let has_error = provider == ProviderKind::Ollama
+        && ollama_models
+            .value()
+            .read()
+            .as_ref()
+            .is_some_and(|models| models.is_empty());
 
     rsx! {
         div { class: "flex flex-col items-end gap-2 min-w-[16rem]",

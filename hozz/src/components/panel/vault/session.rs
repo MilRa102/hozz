@@ -2,11 +2,9 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::LogOut;
 use shared::apps::vault::TokenInfo;
 
-use crate::{
-    components::{
-        button::{ActionButton, ButtonVariant},
-        card::PanelCard,
-    },
+use crate::components::{
+    button::{ActionButton, ButtonVariant},
+    card::PanelCard,
 };
 
 #[component]

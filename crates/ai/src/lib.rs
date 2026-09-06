@@ -1,5 +1,6 @@
 mod control;
 mod engine;
+mod memory;
 mod model;
 mod ollama;
 mod provider;
@@ -13,6 +14,9 @@ pub use control::StreamControl;
 pub use engine::{
     GenerationEvent, GenerationManager, GenerationRequest, GenerationSnapshot,
     GenerationStatus, ToolCallStatus, ToolCallView,
+};
+pub use memory::{
+    MemoryPolicyKind, SledConversationMemory, build_memory, build_memory_with_hook,
 };
 pub use model::{
     Conversation, ConversationUsage, Folder, Message, MessageStatus, ProviderKind, Role,

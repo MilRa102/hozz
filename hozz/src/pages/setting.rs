@@ -5,12 +5,10 @@ use dioxus_icons::lucide::Anchor;
 use prefs::{Category, SettingMeta};
 use shared::apps::{LoggingLayer, Orchestrator, PrefsManager};
 
-use crate::{
-    components::{
-        input::SearchInput,
-        pet::{ZeroEmpty, ZeroMasked},
-        switch::SettingRow,
-    },
+use crate::components::{
+    input::SearchInput,
+    pet::{ZeroEmpty, ZeroMasked},
+    switch::SettingRow,
 };
 
 // Для удобства перебора категорий в UI
@@ -43,24 +41,36 @@ pub fn SettingsView() -> Element {
     let active_provider = states()
         .get("ai.provider")
         .cloned()
-        .or_else(|| orch.get_origin("ai.provider").map(|pref| pref.value))
-        .unwrap_or_else(|| "gemini".to_string());
-    let settings_to_render: Vec<(SettingMeta, String, String, String)> = displayed_settings
-        .iter()
-        .map(|meta| {
-            let value_key = if meta.id == "ai.model" {
-                format!("ai.model.{active_provider}")
-            } else {
-                meta.id.to_string()
-            };
-            let value = states().get(&value_key).cloned().unwrap_or_else(|| {
-                orch.get_origin(&value_key)
-                    .map(|pref| pref.value)
-                    .unwrap_or_else(|| meta.default_value.to_string())
-            });
-            (meta.clone(), value, meta.id.to_string(), value_key)
+        .or_else(|| {
+            orch.get_origin("ai.provider")
+                .map(|pref| pref.value)
         })
-        .collect();
+        .unwrap_or_else(|| "gemini".to_string());
+    let settings_to_render: Vec<(SettingMeta, String, String, String)> =
+        displayed_settings
+            .iter()
+            .map(|meta| {
+                let value_key = if meta.id == "ai.model" {
+                    format!("ai.model.{active_provider}")
+                } else {
+                    meta.id.to_string()
+                };
+                let value = states()
+                    .get(&value_key)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        orch.get_origin(&value_key)
+                            .map(|pref| pref.value)
+                            .unwrap_or_else(|| meta.default_value.to_string())
+                    });
+                (
+                    meta.clone(),
+                    value,
+                    meta.id.to_string(),
+                    value_key,
+                )
+            })
+            .collect();
 
     rsx! {
         div { class: "flex h-full w-full bg-transparent overflow-hidden text-zinc-200 animate-fade-in",

@@ -14,8 +14,8 @@ use ai::{
 };
 use dioxus::{document::eval, logger::tracing, prelude::*};
 use dioxus_icons::lucide::{
-    Check, CircleAlert, CircleStop, Loader, MessageCircle, Maximize2, Minimize2, PanelLeftClose,
-    PanelLeftOpen, PenTool, Send, Sparkles, Trash2,
+    Check, CircleAlert, CircleStop, Loader, Maximize2, MessageCircle, Minimize2,
+    PanelLeftClose, PanelLeftOpen, PenTool, Send, Sparkles, Trash2,
 };
 use shared::{
     ai::AiRegistry,
@@ -277,17 +277,21 @@ fn parse_tavily_extract_payload(group: &ToolGroup) -> Option<TavilyExtractPanel>
                 }
             }
             Some(combined)
-        }
+        },
         serde_json::Value::Object(obj) => {
-            serde_json::from_value::<TavilyExtractPanel>(serde_json::Value::Object(obj)).ok()
-        }
+            serde_json::from_value::<TavilyExtractPanel>(serde_json::Value::Object(obj))
+                .ok()
+        },
         _ => None,
     }
 }
 
 fn truncate_text(value: &str, limit: usize) -> String {
     if value.chars().count() > limit {
-        format!("{}...", value.chars().take(limit).collect::<String>())
+        format!(
+            "{}...",
+            value.chars().take(limit).collect::<String>()
+        )
     } else {
         value.to_string()
     }
@@ -642,11 +646,17 @@ mod chat_area {
         let (status_icon, status_label) = match group.status {
             ToolCallStatus::Running => (rsx!(Loader { size: "13px" }), "вызов"),
             ToolCallStatus::Success => (
-                rsx!(Check { size: "13px", class: "text-emerald-400" }),
+                rsx!(Check {
+                    size: "13px",
+                    class: "text-emerald-400"
+                }),
                 "готово",
             ),
             ToolCallStatus::Error => (
-                rsx!(CircleAlert { size: "13px", class: "text-rose-400" }),
+                rsx!(CircleAlert {
+                    size: "13px",
+                    class: "text-rose-400"
+                }),
                 "ошибка",
             ),
         };
@@ -980,7 +990,8 @@ pub fn ChatPage() -> Element {
                     generation_active.set(false);
                     generation_status.set(None);
                     stream_text.set(String::new());
-                    orch_for_generation.error(format!("Не удалось запустить генерацию: {err}"));
+                    orch_for_generation
+                        .error(format!("Не удалось запустить генерацию: {err}"));
                 }
                 return;
             }
@@ -997,7 +1008,8 @@ pub fn ChatPage() -> Element {
                     }
 
                     if let ai::GenerationStatus::Error(error) = &status {
-                        orch_for_generation.error(format!("Ошибка ответа модели: {error}"));
+                        orch_for_generation
+                            .error(format!("Ошибка ответа модели: {error}"));
                     }
 
                     if matches!(
@@ -1042,7 +1054,8 @@ pub fn ChatPage() -> Element {
                         }
 
                         if let ai::GenerationStatus::Error(error) = &status {
-                            orch_for_generation.error(format!("Ошибка ответа модели: {error}"));
+                            orch_for_generation
+                                .error(format!("Ошибка ответа модели: {error}"));
                         }
 
                         if matches!(

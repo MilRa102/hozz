@@ -25,6 +25,8 @@ hex = "0.4"
 machine-uid = "0.6"
 reqwest = { version = "0.13.4", features = ["json", "stream"] }
 rig = "0.42.0"
+# Must track `rig` exactly: it re-exports `rig-core` types that these policies operate on.
+rig-memory = "0.42.0"
 rkyv = { version = "0.8.17", features = ["bytecheck"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }

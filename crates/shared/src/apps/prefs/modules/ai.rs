@@ -10,6 +10,9 @@ use prefs::{
 use crate::apps::{LoggingLayer, Orchestrator, PrefsManager};
 
 const PROVIDER_OPTIONS: &[&str] = &["gemini", "copilot", "ollama"];
+const MEMORY_POLICY_OPTIONS: &[&str] = &["none", "token"];
+const MEMORY_MIN_TOKENS: i32 = 1_024;
+const MEMORY_MAX_TOKENS: i32 = 1_000_000;
 
 pub struct ChatCapability;
 
@@ -119,11 +122,7 @@ impl PreferenceHook<Arc<Orchestrator>> for AiModelSetting {
         Ok(orch.get_origin(Self::ID).map(|p| p.value))
     }
 
-    async fn execute(
-        &self,
-        orch: Arc<Orchestrator>,
-        new: &str,
-    ) -> anyhow::Result<()> {
+    async fn execute(&self, orch: Arc<Orchestrator>, new: &str) -> anyhow::Result<()> {
         let provider = orch
             .get_origin(AiProviderSetting::ID)
             .and_then(|pref| pref.value.parse().ok())
@@ -134,7 +133,8 @@ impl PreferenceHook<Arc<Orchestrator>> for AiModelSetting {
             ProviderKind::Ollama => AiPrefsReader::KEY_MODEL_OLLAMA,
         };
 
-        orch.prefs.save(key, &prefs::AppPrefs::new(key, new))
+        orch.prefs
+            .save(key, &prefs::AppPrefs::new(key, new))
     }
 }
 
@@ -253,6 +253,99 @@ impl PreferenceHook<Arc<Orchestrator>> for AiOllamaUrlSetting {
     ) -> anyhow::Result<()> {
         if !(new.starts_with("http://") || new.starts_with("https://")) {
             anyhow::bail!("Ollama URL должен начинаться с http:// или https://");
+        }
+        Ok(())
+    }
+
+    async fn actual_state(
+        &self,
+        orch: Arc<Orchestrator>,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+}
+
+pub struct AiMemoryPolicySetting;
+
+impl PreferenceKey for AiMemoryPolicySetting {
+    const ID: &'static str = "ai.memory.policy";
+}
+
+#[async_trait]
+impl PreferenceHook<Arc<Orchestrator>> for AiMemoryPolicySetting {
+    fn meta(&self) -> SettingMeta {
+        SettingMeta {
+            id: Self::ID,
+            title: "Политика памяти",
+            description: "Как обрезать историю диалога перед отправкой модели: \
+                          none — отправлять целиком, token — только последние \
+                          сообщения в рамках бюджета токенов",
+            tags: &["ai", "memory", "память", "context", "контекст"],
+            category: Category::Advanced,
+            setting_type: SettingType::Select(MEMORY_POLICY_OPTIONS),
+            requirements: &[],
+            default_value: "token",
+        }
+    }
+
+    async fn before_execute(
+        &self,
+        _orch: Arc<Orchestrator>,
+        new: &str,
+    ) -> anyhow::Result<()> {
+        if !MEMORY_POLICY_OPTIONS.contains(&new) {
+            anyhow::bail!("Неподдерживаемая политика памяти: {new}");
+        }
+        Ok(())
+    }
+
+    async fn actual_state(
+        &self,
+        orch: Arc<Orchestrator>,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+}
+
+pub struct AiMemoryMaxTokensSetting;
+
+impl PreferenceKey for AiMemoryMaxTokensSetting {
+    const ID: &'static str = "ai.memory.max_tokens";
+}
+
+#[async_trait]
+impl PreferenceHook<Arc<Orchestrator>> for AiMemoryMaxTokensSetting {
+    fn meta(&self) -> SettingMeta {
+        SettingMeta {
+            id: Self::ID,
+            title: "Бюджет токенов памяти",
+            description: "Сколько токенов истории отправлять модели при политике \
+                          «token». Старые сообщения остаются в чате, но выпадают \
+                          из контекста",
+            tags: &["ai", "memory", "память", "tokens", "токены"],
+            category: Category::Advanced,
+            setting_type: SettingType::NumberInput {
+                min: MEMORY_MIN_TOKENS,
+                max: MEMORY_MAX_TOKENS,
+            },
+            requirements: &[],
+            default_value: "32000",
+        }
+    }
+
+    async fn before_execute(
+        &self,
+        _orch: Arc<Orchestrator>,
+        new: &str,
+    ) -> anyhow::Result<()> {
+        let budget: i32 = new.trim().parse().map_err(|_| {
+            anyhow::anyhow!("Бюджет токенов должен быть целым числом: {new}")
+        })?;
+
+        if !(MEMORY_MIN_TOKENS..=MEMORY_MAX_TOKENS).contains(&budget) {
+            anyhow::bail!(
+                "Бюджет токенов должен быть от {MEMORY_MIN_TOKENS} до {MEMORY_MAX_TOKENS}"
+            );
         }
         Ok(())
     }

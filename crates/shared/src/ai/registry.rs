@@ -4,9 +4,7 @@ use ai::AiPrefsReader;
 use rig::tool::server::{ToolServer, ToolServerHandle};
 
 use crate::{
-    ai::tools::{
-        ProfileListTool, ProxyStatusTool, ProxyToggleTool, TavilyExtractTool,
-    },
+    ai::tools::{ProfileListTool, ProxyStatusTool, ProxyToggleTool, TavilyExtractTool},
     apps::Orchestrator,
 };
 
@@ -17,10 +15,13 @@ pub trait AiRegistry {
 
 impl AiRegistry for Orchestrator {
     fn tool_server(self: &Arc<Self>) -> ToolServerHandle {
-        let guard = self.ai_tool_server.read().unwrap_or_else(|poisoned| {
-            tracing::warn!("ai_tool_server read lock poisoned; recovering");
-            poisoned.into_inner()
-        });
+        let guard = self
+            .ai_tool_server
+            .read()
+            .unwrap_or_else(|poisoned| {
+                tracing::warn!("ai_tool_server read lock poisoned; recovering");
+                poisoned.into_inner()
+            });
 
         if let Some(server) = guard.clone() {
             return server;
@@ -39,17 +40,22 @@ impl AiRegistry for Orchestrator {
 
             if let Some(apikey) = AiPrefsReader.tavily_api_key() {
                 builder = builder
-                    .tool(crate::ai::tools::TavilySearchTool::new(apikey.clone()))
+                    .tool(crate::ai::tools::TavilySearchTool::new(
+                        apikey.clone(),
+                    ))
                     .tool(TavilyExtractTool::new(apikey));
             }
 
             builder.run()
         };
 
-        let mut guard = self.ai_tool_server.write().unwrap_or_else(|poisoned| {
-            tracing::warn!("ai_tool_server lock poisoned; recovering");
-            poisoned.into_inner()
-        });
+        let mut guard = self
+            .ai_tool_server
+            .write()
+            .unwrap_or_else(|poisoned| {
+                tracing::warn!("ai_tool_server lock poisoned; recovering");
+                poisoned.into_inner()
+            });
         *guard = Some(server.clone());
         server
     }

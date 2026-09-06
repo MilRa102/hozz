@@ -14,6 +14,7 @@ chrono = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 rig = { workspace = true }
+rig-memory = { workspace = true }
 rkyv = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

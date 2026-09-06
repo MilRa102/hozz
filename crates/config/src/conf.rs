@@ -8,10 +8,7 @@ use figment::{
 use serde::Deserialize;
 
 use crate::{
-    ai::AiConfig,
-    app::AppConfig,
-    mihomo::MihomoConfig,
-    workspace::WorkspaceConfig,
+    ai::AiConfig, app::AppConfig, mihomo::MihomoConfig, workspace::WorkspaceConfig,
 };
 
 #[derive(Debug, Clone, Deserialize)]

@@ -323,8 +323,9 @@ pub(crate) fn tool_result_is_error(payload: &serde_json::Value) -> bool {
 }
 
 fn missing_final_response_error(stream_error: Option<String>) -> String {
-    stream_error
-        .unwrap_or_else(|| "stream ended before Rig reported a final response".to_string())
+    stream_error.unwrap_or_else(|| {
+        "stream ended before Rig reported a final response".to_string()
+    })
 }
 
 #[allow(clippy::too_many_lines)]

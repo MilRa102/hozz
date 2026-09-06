@@ -61,19 +61,27 @@ fn ToastItem(alert: Alert, on_remove: EventHandler<String>) -> Element {
     let (border_color, icon_elem) = match &alert {
         Alert::Error { .. } => (
             "border-l-red-500",
-            rsx!(CircleAlert { class: "text-red-500" }),
+            rsx!(CircleAlert {
+                class: "text-red-500"
+            }),
         ),
         Alert::Ok { .. } => (
             "border-l-emerald-500",
-            rsx!(Check { class: "text-emerald-500" }),
+            rsx!(Check {
+                class: "text-emerald-500"
+            }),
         ),
         Alert::Warning { .. } => (
             "border-l-amber-500",
-            rsx!(TriangleAlert { class: "text-amber-500" }),
+            rsx!(TriangleAlert {
+                class: "text-amber-500"
+            }),
         ),
         Alert::Info { .. } => (
             "border-l-blue-500",
-            rsx!(Info { class: "text-blue-500" }),
+            rsx!(Info {
+                class: "text-blue-500"
+            }),
         ),
     };
 

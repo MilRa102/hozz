@@ -1,7 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use futures::StreamExt;
-use rig::{completion::Message as RigMessage, tool::server::ToolServerHandle};
+use rig::{
+    completion::Message as RigMessage, memory::ConversationMemory,
+    tool::server::ToolServerHandle,
+};
 use serde_json::json;
 use tokio::sync::{Mutex, broadcast, watch};
 
@@ -9,6 +12,7 @@ use crate::{
     control::{StreamCommand, StreamControl},
     model::{ConversationUsage, Message, MessageStatus, Role},
     provider::{self, ChatEvent, ProviderConfig},
+    settings::AiPrefsReader,
     store::{ConversationStore, ConversationUsageStore, MessageStore},
 };
 
@@ -175,8 +179,15 @@ impl GenerationManager {
             };
             let _ = snapshot_tx.send(snapshot.clone());
 
-            let messages = history_store.list(&conv_id).unwrap_or_default();
-            let history: Vec<RigMessage> = messages.iter().map(history_message).collect();
+            let memory =
+                crate::memory::build_memory(&AiPrefsReader, history_store.clone());
+            let history: Vec<RigMessage> = match memory.load(&conv_id).await {
+                Ok(history) => history,
+                Err(error) => {
+                    tracing::warn!(%error, conversation_id = %conv_id, "failed to load conversation memory; continuing without history");
+                    Vec::new()
+                },
+            };
 
             let stream_result = provider::start_stream(
                 &request.config,

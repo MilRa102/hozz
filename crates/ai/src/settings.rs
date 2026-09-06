@@ -1,7 +1,7 @@
 use db::SledManager;
 use prefs::AppPrefs;
 
-use crate::model::ProviderKind;
+use crate::{memory::MemoryPolicyKind, model::ProviderKind};
 
 /// Reads AI-related settings directly from the same Sled tree used by
 /// `shared::apps::prefs::store::PrefsStore` (`TREE_NAME = "app_prefs"`), without the
@@ -25,6 +25,8 @@ impl AiPrefsReader {
     pub const KEY_COPILOT_API_KEY: &'static str = "ai.api_key.copilot";
     pub const KEY_TAVILY_API_KEY: &'static str = "ai.api_key.tavily";
     pub const KEY_OLLAMA_BASE_URL: &'static str = "ai.ollama.base_url";
+    pub const KEY_MEMORY_POLICY: &'static str = "ai.memory.policy";
+    pub const KEY_MEMORY_MAX_TOKENS: &'static str = "ai.memory.max_tokens";
 
     fn value(&self, key: &str) -> Option<String> {
         SledManager::get(self, key)
@@ -95,6 +97,21 @@ impl AiPrefsReader {
         self.value(Self::KEY_OLLAMA_BASE_URL)
             .unwrap_or_else(|| "http://localhost:11434".to_string())
     }
+
+    pub fn memory_policy(&self) -> MemoryPolicyKind {
+        self.value(Self::KEY_MEMORY_POLICY)
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_default()
+    }
+
+    /// Token budget for the memory window. A missing, unparseable or zero value
+    /// falls back to the default rather than truncating the history to nothing.
+    pub fn memory_max_tokens(&self) -> usize {
+        self.value(Self::KEY_MEMORY_MAX_TOKENS)
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|budget| *budget > 0)
+            .unwrap_or(crate::memory::DEFAULT_MAX_TOKENS)
+    }
 }
 
 #[cfg(test)]
@@ -154,7 +171,9 @@ mod tests {
 
         let reader = AiPrefsReader;
         assert_eq!(
-            reader.provider_model(ProviderKind::Gemini).as_deref(),
+            reader
+                .provider_model(ProviderKind::Gemini)
+                .as_deref(),
             Some("gemini-2.5-pro")
         );
         assert_eq!(
@@ -172,7 +191,9 @@ mod tests {
 
         let reader = AiPrefsReader;
         assert_eq!(
-            reader.provider_model(ProviderKind::Copilot).as_deref(),
+            reader
+                .provider_model(ProviderKind::Copilot)
+                .as_deref(),
             Some("legacy-model")
         );
         assert_eq!(
@@ -202,7 +223,10 @@ mod tests {
         set_pref(AiPrefsReader::KEY_TAVILY_API_KEY, "tvly-test-key");
 
         let reader = AiPrefsReader;
-        assert_eq!(reader.tavily_api_key().as_deref(), Some("tvly-test-key"));
+        assert_eq!(
+            reader.tavily_api_key().as_deref(),
+            Some("tvly-test-key")
+        );
     }
 
     #[test]
