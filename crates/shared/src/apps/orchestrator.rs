@@ -13,11 +13,12 @@ use crate::{
     apps::{
         app_store::AppStore,
         prefs::{
-            AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMaxTokensSetting,
-            AiMemoryPolicySetting, AiModelSetting, AiOllamaUrlSetting, AiProviderSetting,
-            AiTavilyKeySetting, AllowLanCapability, AutostartCapability, ChatCapability,
-            FakeIpCapability, FindProcessCapability, GatewayCapability, PolicyCapability,
-            PrefsStore, SplitRouteCapability, SystemProxyCapability, VaultCapability,
+            AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMaxMessagesSetting,
+            AiMemoryMaxTokensSetting, AiMemoryPolicySetting, AiModelSetting,
+            AiOllamaUrlSetting, AiProviderSetting, AiTavilyKeySetting,
+            AllowLanCapability, AutostartCapability, ChatCapability, FakeIpCapability,
+            FindProcessCapability, GatewayCapability, PolicyCapability, PrefsStore,
+            SplitRouteCapability, SystemProxyCapability, VaultCapability,
         },
         proxy::{ProfileStore, RuleStore},
         state::StateManager,
@@ -160,6 +161,7 @@ impl Orchestrator {
         registry.register(AiOllamaUrlSetting);
         registry.register(AiMemoryPolicySetting);
         registry.register(AiMemoryMaxTokensSetting);
+        registry.register(AiMemoryMaxMessagesSetting);
 
         // Create the orchestrator instance with all initialized components.
         let orch = Arc::new(Self {

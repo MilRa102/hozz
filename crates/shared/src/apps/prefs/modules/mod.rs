@@ -4,9 +4,9 @@ mod policy;
 mod vault;
 
 pub use ai::{
-    AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMaxTokensSetting,
-    AiMemoryPolicySetting, AiModelSetting, AiOllamaUrlSetting, AiProviderSetting,
-    AiTavilyKeySetting, ChatCapability,
+    AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMaxMessagesSetting,
+    AiMemoryMaxTokensSetting, AiMemoryPolicySetting, AiModelSetting, AiOllamaUrlSetting,
+    AiProviderSetting, AiTavilyKeySetting, ChatCapability,
 };
 pub use gateway::GatewayCapability;
 pub use policy::PolicyCapability;

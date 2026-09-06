@@ -27,6 +27,7 @@ impl AiPrefsReader {
     pub const KEY_OLLAMA_BASE_URL: &'static str = "ai.ollama.base_url";
     pub const KEY_MEMORY_POLICY: &'static str = "ai.memory.policy";
     pub const KEY_MEMORY_MAX_TOKENS: &'static str = "ai.memory.max_tokens";
+    pub const KEY_MEMORY_MAX_MESSAGES: &'static str = "ai.memory.max_messages";
 
     fn value(&self, key: &str) -> Option<String> {
         SledManager::get(self, key)
@@ -111,6 +112,15 @@ impl AiPrefsReader {
             .and_then(|v| v.parse::<usize>().ok())
             .filter(|budget| *budget > 0)
             .unwrap_or(crate::memory::DEFAULT_MAX_TOKENS)
+    }
+
+    /// Message budget for the sliding window, with the same zero-guard as
+    /// [`Self::memory_max_tokens`].
+    pub fn memory_max_messages(&self) -> usize {
+        self.value(Self::KEY_MEMORY_MAX_MESSAGES)
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|count| *count > 0)
+            .unwrap_or(crate::memory::DEFAULT_MAX_MESSAGES)
     }
 }
 

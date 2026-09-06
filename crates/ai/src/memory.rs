@@ -10,7 +10,7 @@ use rig::{
 };
 use rig_memory::{
     DemotingPolicyMemory, HeuristicTokenCounter, NoopMemoryPolicy, PolicyMemory,
-    TokenWindowMemory,
+    SlidingWindowMemory, TokenWindowMemory,
 };
 
 use crate::{
@@ -23,6 +23,9 @@ use crate::{
 /// Token budget used when `ai.memory.max_tokens` is unset or unparseable.
 pub(crate) const DEFAULT_MAX_TOKENS: usize = 32_000;
 
+/// Message count used when `ai.memory.max_messages` is unset or unparseable.
+pub(crate) const DEFAULT_MAX_MESSAGES: usize = 20;
+
 /// How loaded history is shaped before it reaches the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MemoryPolicyKind {
@@ -31,6 +34,8 @@ pub enum MemoryPolicyKind {
     /// Keep only the newest messages that fit into a token budget.
     #[default]
     TokenWindow,
+    /// Keep only the newest N messages, regardless of their size.
+    SlidingWindow,
 }
 
 /// Error returned when parsing an unknown [`MemoryPolicyKind`] from a string.
@@ -50,6 +55,7 @@ impl std::fmt::Display for MemoryPolicyKind {
         f.write_str(match self {
             Self::None => "none",
             Self::TokenWindow => "token",
+            Self::SlidingWindow => "sliding",
         })
     }
 }
@@ -61,6 +67,7 @@ impl std::str::FromStr for MemoryPolicyKind {
         match value {
             "none" => Ok(Self::None),
             "token" => Ok(Self::TokenWindow),
+            "sliding" => Ok(Self::SlidingWindow),
             other => Err(ParseMemoryPolicyKindError(other.to_string())),
         }
     }
@@ -179,6 +186,10 @@ fn token_window(prefs: &AiPrefsReader) -> TokenWindowMemory {
     )
 }
 
+fn sliding_window(prefs: &AiPrefsReader) -> SlidingWindowMemory {
+    SlidingWindowMemory::last_messages(prefs.memory_max_messages())
+}
+
 /// Builds the conversation memory the engine loads history through, applying
 /// the policy configured in settings.
 pub fn build_memory(
@@ -191,6 +202,9 @@ pub fn build_memory(
         MemoryPolicyKind::None => Arc::new(PolicyMemory::new(backend, NoopMemoryPolicy)),
         MemoryPolicyKind::TokenWindow => {
             Arc::new(PolicyMemory::new(backend, token_window(prefs)))
+        },
+        MemoryPolicyKind::SlidingWindow => {
+            Arc::new(PolicyMemory::new(backend, sliding_window(prefs)))
         },
     }
 }
@@ -216,6 +230,11 @@ where
         MemoryPolicyKind::TokenWindow => Arc::new(DemotingPolicyMemory::new(
             backend,
             token_window(prefs),
+            hook,
+        )),
+        MemoryPolicyKind::SlidingWindow => Arc::new(DemotingPolicyMemory::new(
+            backend,
+            sliding_window(prefs),
             hook,
         )),
     }
@@ -250,8 +269,43 @@ mod tests {
     fn memory_policy_kind_round_trips() {
         assert_eq!("none".parse(), Ok(MemoryPolicyKind::None));
         assert_eq!("token".parse(), Ok(MemoryPolicyKind::TokenWindow));
+        assert_eq!(
+            "sliding".parse(),
+            Ok(MemoryPolicyKind::SlidingWindow)
+        );
         assert_eq!(MemoryPolicyKind::TokenWindow.to_string(), "token");
-        assert!("sliding".parse::<MemoryPolicyKind>().is_err());
+        assert_eq!(
+            MemoryPolicyKind::SlidingWindow.to_string(),
+            "sliding"
+        );
+        assert!("window".parse::<MemoryPolicyKind>().is_err());
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn sliding_window_keeps_newest_messages_in_order() {
+        let kept = SlidingWindowMemory::last_messages(2)
+            .apply(history())
+            .unwrap();
+
+        assert_eq!(
+            counted(&kept),
+            vec!["two".to_string(), "three".to_string()]
+        );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn sliding_window_reports_demoted_prefix() {
+        let (kept, demoted) = SlidingWindowMemory::last_messages(2)
+            .apply_with_demoted(history())
+            .unwrap();
+
+        assert_eq!(counted(&demoted), vec!["one".to_string()]);
+        assert_eq!(
+            counted(&kept),
+            vec!["two".to_string(), "three".to_string()]
+        );
     }
 
     #[test]

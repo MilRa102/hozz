@@ -10,9 +10,11 @@ use prefs::{
 use crate::apps::{LoggingLayer, Orchestrator, PrefsManager};
 
 const PROVIDER_OPTIONS: &[&str] = &["gemini", "copilot", "ollama"];
-const MEMORY_POLICY_OPTIONS: &[&str] = &["none", "token"];
+const MEMORY_POLICY_OPTIONS: &[&str] = &["none", "token", "sliding"];
 const MEMORY_MIN_TOKENS: i32 = 1_024;
 const MEMORY_MAX_TOKENS: i32 = 1_000_000;
+const MEMORY_MIN_MESSAGES: i32 = 1;
+const MEMORY_MAX_MESSAGES: i32 = 100;
 
 pub struct ChatCapability;
 
@@ -278,8 +280,8 @@ impl PreferenceHook<Arc<Orchestrator>> for AiMemoryPolicySetting {
             id: Self::ID,
             title: "Политика памяти",
             description: "Как обрезать историю диалога перед отправкой модели: \
-                          none — отправлять целиком, token — только последние \
-                          сообщения в рамках бюджета токенов",
+                          none — отправлять целиком, token — в рамках бюджета \
+                          токенов, sliding — последние N сообщений",
             tags: &["ai", "memory", "память", "context", "контекст"],
             category: Category::Advanced,
             setting_type: SettingType::Select(MEMORY_POLICY_OPTIONS),
@@ -345,6 +347,57 @@ impl PreferenceHook<Arc<Orchestrator>> for AiMemoryMaxTokensSetting {
         if !(MEMORY_MIN_TOKENS..=MEMORY_MAX_TOKENS).contains(&budget) {
             anyhow::bail!(
                 "Бюджет токенов должен быть от {MEMORY_MIN_TOKENS} до {MEMORY_MAX_TOKENS}"
+            );
+        }
+        Ok(())
+    }
+
+    async fn actual_state(
+        &self,
+        orch: Arc<Orchestrator>,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(orch.get_origin(Self::ID).map(|p| p.value))
+    }
+}
+
+pub struct AiMemoryMaxMessagesSetting;
+
+impl PreferenceKey for AiMemoryMaxMessagesSetting {
+    const ID: &'static str = "ai.memory.max_messages";
+}
+
+#[async_trait]
+impl PreferenceHook<Arc<Orchestrator>> for AiMemoryMaxMessagesSetting {
+    fn meta(&self) -> SettingMeta {
+        SettingMeta {
+            id: Self::ID,
+            title: "Окно сообщений памяти",
+            description: "Сколько последних сообщений отправлять модели при \
+                          политике «sliding». Старые сообщения остаются в чате, \
+                          но выпадают из контекста",
+            tags: &["ai", "memory", "память", "messages", "сообщения"],
+            category: Category::Advanced,
+            setting_type: SettingType::NumberInput {
+                min: MEMORY_MIN_MESSAGES,
+                max: MEMORY_MAX_MESSAGES,
+            },
+            requirements: &[],
+            default_value: "20",
+        }
+    }
+
+    async fn before_execute(
+        &self,
+        _orch: Arc<Orchestrator>,
+        new: &str,
+    ) -> anyhow::Result<()> {
+        let count: i32 = new.trim().parse().map_err(|_| {
+            anyhow::anyhow!("Количество сообщений должно быть целым числом: {new}")
+        })?;
+
+        if !(MEMORY_MIN_MESSAGES..=MEMORY_MAX_MESSAGES).contains(&count) {
+            anyhow::bail!(
+                "Количество сообщений должно быть от {MEMORY_MIN_MESSAGES} до {MEMORY_MAX_MESSAGES}"
             );
         }
         Ok(())
