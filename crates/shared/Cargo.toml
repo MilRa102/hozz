@@ -15,7 +15,6 @@ rest = { path = "../rest" }
 
 async-trait = { workspace = true }
 anyhow = { workspace = true }
-chrono = { workspace = true }
 chrono-humanize = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }

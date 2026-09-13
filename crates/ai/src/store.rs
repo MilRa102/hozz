@@ -245,7 +245,7 @@ mod tests {
             )
             .unwrap();
         let memory_entry =
-            MemoryMapEntry::new(&conversation.id, "remember this", vec![0.1]);
+            MemoryMapEntry::new(&conversation.id, "remember this", "", vec![0.1]);
         MemoryMapStore
             .replace_for_conversation(&conversation.id, &memory_entry)
             .unwrap();

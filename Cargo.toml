@@ -17,12 +17,15 @@ async-trait = "0.1.91"
 auto-launch = "0.6.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-humanize = "0.2"
+blake3 = "1.8"
 directories = "6.0"
+fastembed = "4.9"
 figment = { version = "0.10.19", features = ["toml", "env", "yaml"] }
 futures = "0.3.33"
 interprocess = "2.4.3"
 hex = "0.4"
 machine-uid = "0.6"
+notify = "8.0"
 reqwest = { version = "0.13.4", features = ["json", "stream"] }
 rig = "0.42.0"
 # Must track `rig` exactly: it re-exports `rig-core` types that these policies operate on.

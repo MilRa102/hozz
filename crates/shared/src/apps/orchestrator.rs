@@ -13,10 +13,9 @@ use crate::{
     apps::{
         app_store::AppStore,
         prefs::{
-            AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMapEnabledSetting,
-            AiMemoryMapModelSetting, AiMemoryMapProviderSetting,
-            AiMemoryMaxMessagesSetting, AiMemoryMaxTokensSetting, AiMemoryPolicySetting,
-            AiModelSetting, AiOllamaUrlSetting, AiProviderSetting, AiTavilyKeySetting,
+            AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMaxMessagesSetting,
+            AiMemoryMaxTokensSetting, AiMemoryPolicySetting, AiModelSetting,
+            AiOllamaUrlSetting, AiProviderSetting, AiTavilyKeySetting,
             AllowLanCapability, AutostartCapability, ChatCapability, FakeIpCapability,
             FindProcessCapability, GatewayCapability, PolicyCapability, PrefsStore,
             SplitRouteCapability, SystemProxyCapability, VaultCapability,
@@ -90,6 +89,9 @@ pub struct Orchestrator {
 
     /// Shared Rig tool registry used by AI integrations.
     pub(crate) ai_tool_server: std::sync::RwLock<Option<ToolServerHandle>>,
+
+    /// Background watcher for memory embed_dir folder changes.
+    pub(crate) _memory_watcher: Option<ai::MemoryWatcherHandle>,
 }
 
 impl Orchestrator {
@@ -160,12 +162,17 @@ impl Orchestrator {
         registry.register(AiCopilotKeySetting);
         registry.register(AiTavilyKeySetting);
         registry.register(AiOllamaUrlSetting);
-        registry.register(AiMemoryMapEnabledSetting);
-        registry.register(AiMemoryMapProviderSetting);
-        registry.register(AiMemoryMapModelSetting);
         registry.register(AiMemoryPolicySetting);
         registry.register(AiMemoryMaxTokensSetting);
         registry.register(AiMemoryMaxMessagesSetting);
+
+        let memory_watcher = match ai::start_memory_watcher(conf.workspace.embed_dir()) {
+            Ok(handle) => Some(handle),
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to start memory folder watcher");
+                None
+            },
+        };
 
         // Create the orchestrator instance with all initialized components.
         let orch = Arc::new(Self {
@@ -180,6 +187,7 @@ impl Orchestrator {
             state,
             registry,
             ai_tool_server: std::sync::RwLock::new(None),
+            _memory_watcher: memory_watcher,
         });
 
         // Set the singleton instance in the static ORCH variable.

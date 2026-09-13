@@ -1,14 +1,13 @@
-use rig::{
-    client::{EmbeddingsClient, Nothing},
-    embeddings::{Embedding, EmbeddingModel},
-    providers::{gemini, ollama},
-    vector_store::{
-        VectorSearchRequest, VectorStoreIndex, in_memory_store::InMemoryVectorStore,
-    },
-};
-use serde::{Deserialize, Serialize};
+use std::sync::{LazyLock, Mutex};
 
-use crate::{MemoryMapStore, model::ProviderKind, settings::AiPrefsReader};
+use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use serde::{Deserialize, Serialize};
+use tokio::task::spawn_blocking;
+
+use crate::MemoryMapStore;
+
+static EMBEDDER: LazyLock<Mutex<Option<TextEmbedding>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryMapDocument {
@@ -23,124 +22,55 @@ pub struct MemoryMapHit {
     pub score: f64,
 }
 
-#[derive(Debug, Clone)]
-pub struct MemoryMapRetriever {
-    store: MemoryMapStore,
-    provider: ProviderKind,
-    model: String,
-    ollama_base_url: String,
-    gemini_api_key: Option<String>,
+pub fn compute_blake3_hash(content: &str) -> String {
+    blake3::hash(content.as_bytes())
+        .to_hex()
+        .to_string()
 }
 
-impl MemoryMapRetriever {
-    pub fn from_prefs() -> Self {
-        let prefs = AiPrefsReader;
-        let provider = prefs
-            .memory_map_provider()
-            .unwrap_or_else(|| prefs.provider().unwrap_or(ProviderKind::Gemini));
-        let model = prefs.memory_map_model(provider);
-
-        Self {
-            store: MemoryMapStore,
-            provider,
-            model,
-            ollama_base_url: prefs.ollama_base_url(),
-            gemini_api_key: prefs.gemini_api_key(),
-        }
+pub fn embed_memory_map_document_sync(content: &str) -> anyhow::Result<Vec<f32>> {
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
     }
 
-    pub async fn search(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<MemoryMapHit>> {
-        let records = self.store.recent(100)?;
-        if records.is_empty() || query.trim().is_empty() {
-            return Ok(Vec::new());
-        }
+    let mut guard = EMBEDDER
+        .lock()
+        .map_err(|e| anyhow::anyhow!("mutex poisoned: {e}"))?;
 
-        let documents = records
-            .into_iter()
-            .filter_map(|entry| {
-                let embedding = if entry.embed.is_empty() {
-                    None
-                } else {
-                    Some(Embedding {
-                        document: entry.content.clone(),
-                        vec: entry
-                            .embed
-                            .iter()
-                            .map(|value| *value as f64)
-                            .collect(),
-                    })
-                };
-                embedding.map(|embedding| {
-                    let id = entry.id.clone();
-                    (
-                        id.clone(),
-                        MemoryMapDocument {
-                            id,
-                            content: entry.content,
-                        },
-                        vec![embedding],
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
+    if guard.is_none() {
+        let mut options = InitOptions::default();
+        options.model_name = EmbeddingModel::AllMiniLML6V2;
+        let model = TextEmbedding::try_new(options)?;
+        *guard = Some(model);
+    }
 
-        if documents.is_empty() {
-            return Ok(Vec::new());
-        }
+    let model = guard
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("FastEmbed model not initialized"))?;
 
-        let results = match self.provider {
-            ProviderKind::Gemini => {
-                let api_key = self.gemini_api_key.clone().unwrap_or_default();
-                if api_key.trim().is_empty() {
-                    return Ok(Vec::new());
-                }
-                let client = gemini::Client::new(api_key)?;
-                let model = client.embedding_model(self.model.as_str());
-                let index =
-                    InMemoryVectorStore::from_documents_with_ids(documents).index(model);
-                let req = VectorSearchRequest::builder()
-                    .query(query)
-                    .samples(limit as u64)
-                    .build();
-                index.top_n::<MemoryMapDocument>(req).await?
-            },
-            ProviderKind::Ollama => {
-                let client = ollama::Client::builder()
-                    .api_key(Nothing)
-                    .base_url(&self.ollama_base_url)
-                    .build()?;
-                let model = client.embedding_model(self.model.as_str());
-                let index =
-                    InMemoryVectorStore::from_documents_with_ids(documents).index(model);
-                let req = VectorSearchRequest::builder()
-                    .query(query)
-                    .samples(limit as u64)
-                    .build();
-                index.top_n::<MemoryMapDocument>(req).await?
-            },
-            ProviderKind::Copilot => {
-                anyhow::bail!("Copilot embeddings are not enabled for the memory map yet")
-            },
-        };
+    let embeddings = model.embed(vec![content], None)?;
+    embeddings
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("FastEmbed produced no vector"))
+}
 
-        Ok(results
-            .into_iter()
-            .filter_map(|(score, _id, doc)| {
-                if doc.content.trim().is_empty() {
-                    None
-                } else {
-                    Some(MemoryMapHit {
-                        id: doc.id,
-                        content: doc.content,
-                        score,
-                    })
-                }
-            })
-            .collect())
+pub async fn embed_memory_map_document(content: &str) -> anyhow::Result<Vec<f32>> {
+    let content = content.to_string();
+    spawn_blocking(move || embed_memory_map_document_sync(&content)).await?
+}
+
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
     }
 }
 
@@ -148,50 +78,44 @@ pub async fn search_memory_map(
     query: &str,
     limit: usize,
 ) -> anyhow::Result<Vec<MemoryMapHit>> {
-    MemoryMapRetriever::from_prefs()
-        .search(query, limit)
-        .await
-}
+    if query.trim().is_empty() || limit == 0 {
+        return Ok(Vec::new());
+    }
 
-pub(crate) async fn embed_memory_map_document(content: &str) -> anyhow::Result<Vec<f32>> {
-    let prefs = AiPrefsReader;
-    let provider = prefs
-        .memory_map_provider()
-        .unwrap_or_else(|| prefs.provider().unwrap_or(ProviderKind::Gemini));
-    let model_name = prefs.memory_map_model(provider);
+    let store = MemoryMapStore;
+    let records = store.all()?;
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    let embedding = match provider {
-        ProviderKind::Gemini => {
-            let api_key = prefs.gemini_api_key().unwrap_or_default();
-            if api_key.trim().is_empty() {
-                anyhow::bail!("a Gemini API key is required to embed the memory map");
-            }
-            let client = gemini::Client::new(api_key)?;
-            client
-                .embedding_model(model_name)
-                .embed_text(content)
-                .await?
-        },
-        ProviderKind::Ollama => {
-            let client = ollama::Client::builder()
-                .api_key(Nothing)
-                .base_url(prefs.ollama_base_url())
-                .build()?;
-            client
-                .embedding_model(model_name)
-                .embed_text(content)
-                .await?
-        },
-        ProviderKind::Copilot => {
-            anyhow::bail!("Copilot embeddings are not enabled for the memory map yet");
-        },
-    };
+    let query_vector = embed_memory_map_document(query).await?;
+    if query_vector.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    Ok(embedding
-        .vec
-        .into_iter()
-        .map(|value| value as f32)
-        .collect())
+    let mut hits = Vec::new();
+    for entry in records {
+        if entry.embed.is_empty() || entry.content.trim().is_empty() {
+            continue;
+        }
+        let score = cosine_similarity(&query_vector, &entry.embed) as f64;
+        if score > 0.0 {
+            hits.push(MemoryMapHit {
+                id: entry.id,
+                content: entry.content,
+                score,
+            });
+        }
+    }
+
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    hits.truncate(limit);
+
+    Ok(hits)
 }
 
 pub fn memory_map_context(entries: &[MemoryMapHit]) -> String {
@@ -231,5 +155,21 @@ mod tests {
         assert!(context.contains("Карта памяти"));
         assert!(context.contains("remember this"));
         assert!(context.contains("and this too"));
+    }
+
+    #[test]
+    fn cosine_similarity_computes_expected_value() {
+        let v1 = vec![1.0, 0.0, 0.0];
+        let v2 = vec![1.0, 0.0, 0.0];
+        let v3 = vec![0.0, 1.0, 0.0];
+
+        assert!((cosine_similarity(&v1, &v2) - 1.0).abs() < 1e-5);
+        assert!((cosine_similarity(&v1, &v3) - 0.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn compute_blake3_hash_returns_hex() {
+        let hash = compute_blake3_hash("test content");
+        assert_eq!(hash.len(), 64);
     }
 }

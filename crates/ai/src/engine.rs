@@ -179,15 +179,11 @@ impl GenerationManager {
             };
             let _ = snapshot_tx.send(snapshot.clone());
 
-            let memory = if AiPrefsReader.memory_map_enabled() {
-                crate::memory::build_memory_with_hook(
-                    &AiPrefsReader,
-                    history_store.clone(),
-                    crate::memory::MemoryMapDemotionHook::new(history_store.clone()),
-                )
-            } else {
-                crate::memory::build_memory(&AiPrefsReader, history_store.clone())
-            };
+            let memory = crate::memory::build_memory_with_hook(
+                &AiPrefsReader,
+                history_store.clone(),
+                crate::memory::MemoryMapDemotionHook::new(history_store.clone()),
+            );
             let history: Vec<RigMessage> = match memory.load(&conv_id).await {
                 Ok(history) => history,
                 Err(error) => {
@@ -196,22 +192,18 @@ impl GenerationManager {
                 },
             };
 
-            let prompt = if AiPrefsReader.memory_map_enabled() {
-                let hits =
-                    crate::embedding::search_memory_map(&request.system_prompt, 5).await;
-                match hits {
-                    Ok(hits) if !hits.is_empty() => {
-                        let context = crate::embedding::memory_map_context(&hits);
-                        if context.is_empty() {
-                            request.system_prompt
-                        } else {
-                            format!("{context}\n\n{}", request.system_prompt)
-                        }
-                    },
-                    Ok(_) | Err(_) => request.system_prompt,
-                }
-            } else {
-                request.system_prompt
+            let hits =
+                crate::embedding::search_memory_map(&request.system_prompt, 5).await;
+            let prompt = match hits {
+                Ok(hits) if !hits.is_empty() => {
+                    let context = crate::embedding::memory_map_context(&hits);
+                    if context.is_empty() {
+                        request.system_prompt
+                    } else {
+                        format!("{context}\n\n{}", request.system_prompt)
+                    }
+                },
+                Ok(_) | Err(_) => request.system_prompt,
             };
 
             let stream_result = provider::start_stream(

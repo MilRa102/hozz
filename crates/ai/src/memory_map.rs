@@ -1,14 +1,12 @@
+use db::SledManager;
 use rkyv::{Archive, Deserialize, Serialize};
 use uuid::Uuid;
-
-use db::SledManager;
-
-use crate::settings::AiPrefsReader;
 
 #[derive(Debug, Clone, PartialEq, Archive, Serialize, Deserialize)]
 pub struct MemoryMapEntry {
     pub conversation_id: String,
     pub id: String,
+    pub hash: String,
     pub created_at: i64,
     pub last_used_at: i64,
     pub content: String,
@@ -19,15 +17,27 @@ impl MemoryMapEntry {
     pub fn new(
         conversation_id: impl Into<String>,
         content: impl Into<String>,
+        hash: impl Into<String>,
         embed: Vec<f32>,
     ) -> Self {
         let now = chrono::Utc::now().timestamp_millis();
+        let content_str = content.into();
+        let hash_str = hash.into();
+        let final_hash = if hash_str.is_empty() {
+            blake3::hash(content_str.as_bytes())
+                .to_hex()
+                .to_string()
+        } else {
+            hash_str
+        };
+
         Self {
             conversation_id: conversation_id.into(),
             id: Uuid::new_v4().to_string(),
+            hash: final_hash,
             created_at: now,
             last_used_at: now,
-            content: content.into(),
+            content: content_str,
             embed,
         }
     }
@@ -60,6 +70,24 @@ impl MemoryMapStore {
         Self::delete(self, conversation_id)
     }
 
+    pub fn get_by_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> anyhow::Result<Option<MemoryMapEntry>> {
+        SledManager::get(self, conversation_id)
+    }
+
+    pub fn all(&self) -> anyhow::Result<Vec<MemoryMapEntry>> {
+        let tree = self.tree()?;
+        let mut items = Vec::new();
+        for entry in tree.iter().values() {
+            let bytes = entry?;
+            let item = Self::decode(&bytes)?;
+            items.push(item);
+        }
+        Ok(items)
+    }
+
     pub fn recent(&self, limit: usize) -> anyhow::Result<Vec<MemoryMapEntry>> {
         let tree = self.tree()?;
         let mut items = Vec::new();
@@ -72,10 +100,6 @@ impl MemoryMapStore {
             }
         }
         Ok(items)
-    }
-
-    pub fn is_enabled(prefs: &AiPrefsReader) -> bool {
-        prefs.memory_map_enabled()
     }
 }
 
@@ -90,10 +114,12 @@ mod tests {
         let entry = MemoryMapEntry::new(
             "conversation",
             "remember this",
+            "",
             vec![0.1, 0.2, 0.3],
         );
         assert_eq!(entry.conversation_id, "conversation");
         assert!(!entry.id.is_empty());
+        assert!(!entry.hash.is_empty());
         assert!(entry.created_at > 0);
         assert_eq!(entry.created_at, entry.last_used_at);
         assert_eq!(entry.content, "remember this");
@@ -107,9 +133,10 @@ mod tests {
         let store = MemoryMapStore;
         let conversation_id = format!("conversation-a-{}", Uuid::new_v4());
         let other_id = format!("conversation-b-{}", Uuid::new_v4());
-        let first = MemoryMapEntry::new(&conversation_id, "first", vec![0.1]);
-        let replacement = MemoryMapEntry::new(&conversation_id, "replacement", vec![0.2]);
-        let other = MemoryMapEntry::new(&other_id, "other", vec![0.3]);
+        let first = MemoryMapEntry::new(&conversation_id, "first", "", vec![0.1]);
+        let replacement =
+            MemoryMapEntry::new(&conversation_id, "replacement", "", vec![0.2]);
+        let other = MemoryMapEntry::new(&other_id, "other", "", vec![0.3]);
 
         store
             .replace_for_conversation(&conversation_id, &first)
@@ -149,8 +176,8 @@ mod tests {
         let store = MemoryMapStore;
         let conversation_id = format!("conversation-a-{}", Uuid::new_v4());
         let other_id = format!("conversation-b-{}", Uuid::new_v4());
-        let first = MemoryMapEntry::new(&conversation_id, "first", vec![0.1]);
-        let other = MemoryMapEntry::new(&other_id, "other", vec![0.2]);
+        let first = MemoryMapEntry::new(&conversation_id, "first", "", vec![0.1]);
+        let other = MemoryMapEntry::new(&other_id, "other", "", vec![0.2]);
         store
             .replace_for_conversation(&conversation_id, &first)
             .unwrap();

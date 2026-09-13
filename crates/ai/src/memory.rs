@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fs, sync::Arc};
 
 use rig::{
     completion::{
@@ -270,21 +270,37 @@ impl DemotionHook for MemoryMapDemotionHook {
             let history = stored.iter().map(history_message).collect();
             let demoted = demoted_history(&AiPrefsReader, history)?;
             let content = format_memory_map_document(&demoted);
-            let memory_map = MemoryMapStore;
 
-            if content.is_empty() {
-                return memory_map
+            let embed_dir = config::CONF.workspace.embed_dir();
+            let file_path = embed_dir.join(format!("{conversation_id}.md"));
+
+            if content.trim().is_empty() {
+                if file_path.exists()
+                    && let Err(e) = fs::remove_file(&file_path)
+                {
+                    tracing::warn!(error = %e, path = ?file_path, "Failed to remove memory file");
+                }
+                return MemoryMapStore
                     .remove_for_conversation(conversation_id)
                     .map_err(MemoryError::backend);
+            }
+
+            if let Err(err) = fs::create_dir_all(&embed_dir) {
+                tracing::warn!(error = %err, "Failed to create embed_dir");
+            }
+            if let Err(err) = fs::write(&file_path, &content) {
+                tracing::warn!(error = %err, path = ?file_path, "Failed to write memory file");
             }
 
             let embedding = embed_memory_map_document(&content)
                 .await
                 .map_err(MemoryError::backend)?;
-            memory_map
+            let hash = crate::embedding::compute_blake3_hash(&content);
+
+            MemoryMapStore
                 .replace_for_conversation(
                     conversation_id,
-                    &MemoryMapEntry::new(conversation_id, content, embedding),
+                    &MemoryMapEntry::new(conversation_id, content, hash, embedding),
                 )
                 .map_err(MemoryError::backend)
         })

@@ -4,8 +4,7 @@ mod policy;
 mod vault;
 
 pub use ai::{
-    AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMapEnabledSetting,
-    AiMemoryMapModelSetting, AiMemoryMapProviderSetting, AiMemoryMaxMessagesSetting,
+    AiCopilotKeySetting, AiGeminiKeySetting, AiMemoryMaxMessagesSetting,
     AiMemoryMaxTokensSetting, AiMemoryPolicySetting, AiModelSetting, AiOllamaUrlSetting,
     AiProviderSetting, AiTavilyKeySetting, ChatCapability,
 };

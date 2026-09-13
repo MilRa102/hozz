@@ -24,9 +24,8 @@ serde_json = { workspace = true }
 
 arboard = "3.4"
 base64 = "0.23"
-comrak = "0.54.0"
+comrak = "0.55.0"
 image = "0.25"
-futures = "0.3"
 
 dioxus = { version = "0.7.10", features = ["router"] }
 dioxus-icons = { version = "0.1.0", default-features = false }

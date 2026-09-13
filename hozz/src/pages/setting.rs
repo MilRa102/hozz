@@ -46,14 +46,6 @@ pub fn SettingsView() -> Element {
                 .map(|pref| pref.value)
         })
         .unwrap_or_else(|| "gemini".to_string());
-    let active_embedding_provider = states()
-        .get("ai.memory_map.embedding.provider")
-        .cloned()
-        .or_else(|| {
-            orch.get_origin("ai.memory_map.embedding.provider")
-                .map(|pref| pref.value)
-        })
-        .unwrap_or_else(|| "gemini".to_string());
     let settings_to_render: Vec<(SettingMeta, String, String, String, String)> =
         displayed_settings
             .iter()
@@ -71,11 +63,7 @@ pub fn SettingsView() -> Element {
                             .map(|pref| pref.value)
                             .unwrap_or_else(|| meta.default_value.to_string())
                     });
-                let provider_for_row = if meta.id == "ai.memory_map.embedding.model" {
-                    active_embedding_provider.clone()
-                } else {
-                    active_provider.clone()
-                };
+                let provider_for_row = active_provider.clone();
                 (
                     meta.clone(),
                     value,

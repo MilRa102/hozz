@@ -10,7 +10,6 @@ config = { path = "../config" }
 
 anyhow = { workspace = true }
 interprocess = { workspace = true }
-serde = { workspace = true }
 tracing = { workspace = true }
 auto-launch = { workspace = true }
 sysproxy = { workspace = true }

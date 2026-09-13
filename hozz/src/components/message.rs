@@ -295,11 +295,13 @@ fn enhance_markdown_html(html: String) -> String {
 #[component]
 pub fn MarkdownMessage(content: String) -> Element {
     let mut options = comrak::Options::default();
+    options.extension.alerts = true;
+    options.extension.autolink = true;
+    options.extension.math_code = true;
+    options.extension.highlight = true;
     options.extension.strikethrough = true;
     options.extension.table = true;
     options.extension.tasklist = true;
-    options.extension.autolink = true;
-    options.extension.tagfilter = true;
     options.parse.tasklist_in_table = true;
     options.render.r#unsafe = true;
 

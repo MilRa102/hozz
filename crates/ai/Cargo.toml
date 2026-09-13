@@ -6,12 +6,16 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
+config = { path = "../config" }
 db = { path = "../db" }
 prefs = { path = "../prefs" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+blake3 = { workspace = true }
 chrono = { workspace = true }
+fastembed = { workspace = true }
 futures = { workspace = true }
+notify = { workspace = true }
 reqwest = { workspace = true }
 rig = { workspace = true }
 rig-memory = { workspace = true }

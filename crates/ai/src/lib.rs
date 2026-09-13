@@ -11,11 +11,11 @@ mod store;
 #[cfg(test)]
 mod test_support;
 mod title;
+mod watcher;
 
 pub use control::StreamControl;
 pub use embedding::{
-    MemoryMapDocument, MemoryMapHit, MemoryMapRetriever, memory_map_context,
-    search_memory_map,
+    MemoryMapDocument, MemoryMapHit, memory_map_context, search_memory_map,
 };
 pub use engine::{
     GenerationEvent, GenerationManager, GenerationRequest, GenerationSnapshot,
@@ -33,3 +33,4 @@ pub use provider::{ChatEvent, ProviderConfig};
 pub use settings::AiPrefsReader;
 pub use store::{ConversationStore, ConversationUsageStore, FolderStore, MessageStore};
 pub use title::{generate_title, normalize_title};
+pub use watcher::{MemoryWatcherHandle, start_memory_watcher, sync_embed_dir};

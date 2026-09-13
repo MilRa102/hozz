@@ -37,14 +37,19 @@ fn default_bin_dir() -> PathBuf {
 }
 
 impl WorkspaceConfig {
+    pub fn embed_dir(&self) -> PathBuf {
+        self.data_dir.join("store").join("memory")
+    }
+
     pub(crate) fn ensure_dir(&self) -> io::Result<()> {
         fs::create_dir_all(&self.data_dir)?;
         fs::create_dir_all(&self.bin_dir)?;
+        fs::create_dir_all(self.embed_dir())?;
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            for dir in [&self.data_dir, &self.bin_dir] {
+            for dir in [&self.data_dir, &self.bin_dir, &self.embed_dir()] {
                 fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
             }
         }
